@@ -12,11 +12,11 @@
   outputs = { self, nixpkgs, flake-utils, fenix, environments }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs { inherit system fenixPkgs; };
+        pkgs = import nixpkgs { inherit system; };
         isDarwin = pkgs.stdenv.isDarwin;
         frameworks = pkgs.darwin.apple_sdk.frameworks;
         fenixPkgs = fenix.packages.${system};
-        environments = import environments { inherit pkgs fenix; };
+        linters = import "${environments}/linters.nix" { inherit pkgs; };
         rust-toolchain = with fenixPkgs;
           combine [
             minimal.rustc
@@ -41,7 +41,7 @@
             twiggy
             wasm-bindgen-cli
             binaryen
-            environments.linters
+            linters
             tokio-console
           ] ++ lib.optionals isDarwin [
             libiconv
