@@ -17,10 +17,6 @@ pub struct Messages {
 pub const WELCOME_MESSAGE: &str = std::include_str!("../../../static/welcome_message.txt");
 
 impl Messages {
-    pub fn new() -> Self {
-        Default::default()
-    }
-
     pub fn focused(&self) -> &GroupId {
         &self.focused
     }

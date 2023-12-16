@@ -13,7 +13,10 @@ ratatui = "0.24.0"
 anyhow = "1"
 argh = "0.1.12"
 xmtp_mls = { git = "https://github.com/xmtp/libxmtp.git", branch = "main" }
+xmtp_api_grpc = { git = "https://github.com/xmtp/libxmtp.git", branch = "main" }
 ethers = "2"
+hex = "0.4"
+rand = "0.8"
 walletconnect = "0.2.0"
 tokio = { version = "1.35.0", features = ["macros", "rt-multi-thread", "time", "tracing"] }
 tokio-stream = "0.1"

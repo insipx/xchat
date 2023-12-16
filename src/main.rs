@@ -20,7 +20,7 @@ use tokio::sync::{
 };
 
 use crate::{
-    dispatch::{Action, Commands, Dispatcher, PageRender, Store},
+    dispatch::{Action, Commands, Dispatcher, PageRender, Store, XMTP},
     events::Events,
     pages::ChatPage,
 };
@@ -29,27 +29,32 @@ type CrosstermTerminal = Terminal<CrosstermBackend<std::io::Stderr>>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // console_subscriber::init();
-    self::util::init_logging()?;
+    console_subscriber::init();
+    // self::util::init_logging()?;
     #[allow(unused)]
     let app: cli::XChatApp = argh::from_env();
-
-    enable_raw_mode().unwrap();
-    stderr().execute(EnterAlternateScreen)?;
-    let mut terminal = Terminal::new(CrosstermBackend::new(stderr()))?;
 
     let (tx, _) = broadcast::channel::<Action>(100);
 
     let (xmtp_tx, xmtp_rx) = mpsc::channel(100);
     let (command_tx, command_rx) = mpsc::channel(100);
 
+    // events
+    let xmtp = XMTP::new(tx.clone(), xmtp_rx, app).await?.spawn();
     let events = Events::new(tx.clone()).spawn();
-    let commands = Commands::new(tx.clone(), command_rx).spawn();
+    let commands = Commands::new(tx.clone(), xmtp_tx.clone(), command_rx).spawn();
+
+    enable_raw_mode().unwrap();
+    stderr().execute(EnterAlternateScreen)?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(stderr()))?;
+
+    // views
     let chat_page = ChatPage::new(xmtp_tx, command_tx);
 
     render_loop(&mut terminal, tx.subscribe(), chat_page, 1_000.0, 120.0).await;
 
     events.abort();
+    xmtp.abort();
     commands.abort();
     disable_raw_mode().unwrap();
     stderr().execute(LeaveAlternateScreen)?;
@@ -83,7 +88,7 @@ pub async fn render_loop(
                 }
             },
             _ = tick_delay => {
-
+                // What do here?
             },
             _ = render_delay => {
                 terminal.draw(|f| chat_page.render(f)).unwrap();

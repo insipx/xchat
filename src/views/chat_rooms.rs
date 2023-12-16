@@ -1,11 +1,7 @@
 //! Chat Rooms View
-use std::{
-    future::{self, Future},
-    pin::Pin,
-};
+use std::{future::Future, pin::Pin};
 
 use ratatui::{
-    prelude::Rect,
     widgets::{Block, Borders, Paragraph},
     Frame,
 };

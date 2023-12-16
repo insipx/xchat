@@ -1,19 +1,29 @@
 //! Commands events which may manipulate the state of the terminal
 use tokio::{
     sync::{
-        broadcast::{error::SendError, Sender},
-        mpsc::Receiver,
+        broadcast::{error::SendError, Sender as BroadcastSender},
+        mpsc::{Receiver, Sender},
     },
     task::JoinHandle,
 };
-use tokio_stream::StreamExt;
 
-use crate::dispatch::Action;
+use crate::dispatch::{Action, XMTPAction};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandAction {
     Help,
+    /// Register a new identity with XMTP
     Register,
+    /// Generate a new ephemeral wallet identity
+    Generate,
+    /// Create a new group
+    Create,
+    /// Join a group
+    Join,
+    /// Invite to a group
+    Invite,
+    /// Information about you (Wallet Address, ENS Profile, etc.)
+    Me,
     Quit,
     List(ListCommand),
     Unknown(String),
@@ -38,7 +48,8 @@ impl From<ListCommand> for CommandAction {
 }
 
 pub struct Commands {
-    tx: Sender<Action>,
+    tx: BroadcastSender<Action>,
+    xmtp: Sender<XMTPAction>,
     commands: Receiver<CommandAction>,
 }
 
@@ -49,6 +60,11 @@ impl From<String> for CommandAction {
             "quit" => CommandAction::Quit,
             "register" => CommandAction::Register,
             "list" => CommandAction::List(ListCommand::Users),
+            "generate" => CommandAction::Generate,
+            "create" => CommandAction::Create,
+            "join" => CommandAction::Join,
+            "invite" => CommandAction::Invite,
+            "me" => CommandAction::Me,
             s => CommandAction::Unknown(s.into()),
         }
     }
@@ -62,13 +78,24 @@ impl CommandAction {
         msg.push_str("\n    /quit: quit the app");
         msg.push_str("\n    /register: register this instance with XMTP");
         msg.push_str("\n    /list {groups|users}: list the users or groups you are apart of");
+        msg.push_str("\n    /generate: generate a new ephemeral wallet identity");
+        msg.push_str("\n    /create: create a new group");
+        msg.push_str("\n    /join {group_id}: join a group");
+        msg.push_str("\n    /invite {user_id}: invite to join a group");
+        msg.push_str(
+            "\n    /me: get information about the current sessions wallet address, balance, network, etc. ",
+        );
         msg
     }
 }
 
 impl Commands {
-    pub fn new(tx: Sender<Action>, commands: Receiver<CommandAction>) -> Self {
-        Self { tx, commands }
+    pub fn new(
+        tx: BroadcastSender<Action>,
+        xmtp: Sender<XMTPAction>,
+        commands: Receiver<CommandAction>,
+    ) -> Self {
+        Self { tx, xmtp, commands }
     }
 
     pub fn spawn(mut self) -> JoinHandle<()> {
@@ -78,14 +105,19 @@ impl Commands {
                     CommandAction::Help => self.send_message(CommandAction::help()),
                     CommandAction::Quit => self.tx.send(Action::Quit),
                     CommandAction::Register => Ok(0),
-                    CommandAction::List(list) => Ok(0),
+                    CommandAction::Generate => Ok(0),
+                    CommandAction::List(_) => Ok(0),
+                    CommandAction::Create => Ok(0),
+                    CommandAction::Join => Ok(0),
+                    CommandAction::Invite => Ok(0),
+                    CommandAction::Me => Ok(0),
                     CommandAction::Unknown(s) => self.send_message(format!(
                         "Unknown command: /{}. use `/help` to get a list of commands",
                         s
                     )),
                 };
                 if let Err(e) = res {
-                    log::error!("Help message failed to send");
+                    log::error!("Help message failed to send {}", e);
                 }
             }
         })

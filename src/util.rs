@@ -1,10 +1,8 @@
 use std::path::PathBuf;
 
 use anyhow::Result;
-use color_eyre::eyre::Context;
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
-use tracing::error;
 use tracing_error::ErrorLayer;
 use tracing_subscriber::{self, layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
@@ -16,7 +14,7 @@ lazy_static! {
     pub static ref LOG_FILE: String = format!("{}.log", env!("CARGO_PKG_NAME"));
 }
 
-fn project_directory() -> Option<ProjectDirs> {
+pub fn project_directory() -> Option<ProjectDirs> {
     ProjectDirs::from("com", "insipx", env!("CARGO_PKG_NAME"))
 }
 

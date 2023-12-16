@@ -1,7 +1,7 @@
 //! The Chat Area View
 mod types;
 
-use std::{collections::HashMap, future::Future, pin::Pin};
+use std::{future::Future, pin::Pin};
 
 use ratatui::{prelude::*, widgets::*, Frame};
 
@@ -32,8 +32,7 @@ impl Store for ChatArea {
         let future = async {
             match action {
                 Action::ReceiveMessage(group_id, (user, text)) => {
-                    let messages = self.messages.get_or_insert(&group_id);
-                    messages.push(Message { text, user });
+                    self.messages.add(&group_id, Message { text, user });
                 }
                 _ => (),
             }

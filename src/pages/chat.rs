@@ -19,7 +19,6 @@ enum Child {
 
 pub struct ChatPage {
     map: HashMap<Child, Box<dyn ViewStore>>,
-    xmtp: Sender<XMTPAction>,
 }
 
 impl ChatPage {
@@ -37,7 +36,7 @@ impl ChatPage {
         map.insert(Child::ChatArea, Box::new(chat_area_view) as Box<dyn ViewStore>);
         map.insert(Child::InputBox, Box::new(input_box) as Box<dyn ViewStore>);
 
-        Self { map, xmtp }
+        Self { map }
     }
 }
 

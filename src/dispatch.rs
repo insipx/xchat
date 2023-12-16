@@ -14,8 +14,6 @@ use ratatui::{prelude::Rect, Frame};
 use tokio::sync::broadcast::Receiver;
 pub use xmtp::*;
 
-pub type EventListener = Receiver<Action>;
-
 /// Generic Dispatcher that dispatches actions
 pub struct Dispatcher<'a> {
     stores: Vec<&'a mut dyn Store>,
@@ -25,10 +23,6 @@ pub struct Dispatcher<'a> {
 impl<'a> Dispatcher<'a> {
     pub fn new(stores: Vec<&'a mut dyn Store>, events: &'a mut Receiver<Action>) -> Self {
         Self { stores, events }
-    }
-
-    pub fn register(&mut self, store: &'a mut dyn Store) {
-        self.stores.push(store)
     }
 
     pub async fn dispatch(&mut self) -> Action {
