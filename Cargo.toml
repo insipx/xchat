@@ -6,7 +6,21 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-crossterm = "0.27.0"
+log = "0.4"
+futures = "0.3"
+crossterm = { version = "0.27.0", features = ["event-stream"]}
 ratatui = "0.24.0"
 anyhow = "1"
 argh = "0.1.12"
+xmtp_mls = { git = "https://github.com/xmtp/libxmtp.git", branch = "main" }
+ethers = "2"
+walletconnect = "0.2.0"
+tokio = { version = "1.35.0", features = ["macros", "rt-multi-thread", "time", "tracing"] }
+tokio-stream = "0.1"
+lazy_static = "1.4"
+color-eyre = "0.6.2"
+directories = "5"
+tracing-error = "0.2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"]}
+console-subscriber = "0.2"

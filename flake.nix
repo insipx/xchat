@@ -43,6 +43,8 @@
             binaryen
             linters
             tokio-console
+
+            weechat
           ] ++ lib.optionals isDarwin [
             libiconv
             frameworks.CoreServices
