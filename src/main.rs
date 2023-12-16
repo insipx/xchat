@@ -5,7 +5,6 @@ mod pages;
 mod types;
 mod util;
 mod views;
-mod xmtp;
 
 use std::io::stderr;
 
@@ -21,7 +20,7 @@ use tokio::sync::{
 };
 
 use crate::{
-    dispatch::{Action, Dispatcher, PageRender, Store},
+    dispatch::{Action, Commands, Dispatcher, PageRender, Store},
     events::Events,
     pages::ChatPage,
 };
@@ -41,14 +40,17 @@ async fn main() -> Result<()> {
 
     let (tx, _) = broadcast::channel::<Action>(100);
 
-    let (xmtp_tx, xmtp_rx) = mpsc::channel(500);
+    let (xmtp_tx, xmtp_rx) = mpsc::channel(100);
+    let (command_tx, command_rx) = mpsc::channel(100);
 
-    let handle = Events::new(tx.clone()).spawn();
-    let chat_page = ChatPage::new(xmtp_tx);
+    let events = Events::new(tx.clone()).spawn();
+    let commands = Commands::new(tx.clone(), command_rx).spawn();
+    let chat_page = ChatPage::new(xmtp_tx, command_tx);
 
     render_loop(&mut terminal, tx.subscribe(), chat_page, 1_000.0, 120.0).await;
 
-    handle.abort();
+    events.abort();
+    commands.abort();
     disable_raw_mode().unwrap();
     stderr().execute(LeaveAlternateScreen)?;
     Ok(())

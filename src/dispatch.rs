@@ -1,13 +1,18 @@
 //! Dispatcher for our stores
+mod commands;
+mod xmtp;
+
 use std::{
     future::{self, Future},
     pin::Pin,
 };
 
+pub use commands::*;
 use crossterm::event::KeyCode;
 use futures::future::join_all;
 use ratatui::{prelude::Rect, Frame};
 use tokio::sync::broadcast::Receiver;
+pub use xmtp::*;
 
 pub type EventListener = Receiver<Action>;
 
@@ -30,7 +35,7 @@ impl<'a> Dispatcher<'a> {
         let action = self.events.recv().await.unwrap();
 
         match action {
-            Action::KeyPress(KeyCode::Char('q')) => return Action::Quit,
+            Action::Quit => return Action::Quit,
             _ => (),
         };
 
@@ -96,36 +101,8 @@ pub enum Action {
     ReceiveMessage(Vec<u8>, (String, String)),
     Noop,
     ChangeRoom(usize),
-    Ev(crossterm::event::Event),
     XMTP(XMTPAction),
-    Command(),
-}
-
-/// Actios for XMTP
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum XMTPAction {
-    /// Send a group message
-    SendMessage(String),
-}
-
-impl From<XMTPAction> for Action {
-    fn from(action: XMTPAction) -> Action {
-        Action::XMTP(action)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CommandAction {
-    Help,
-    Register,
-    List(ListCommand),
-    Unknown(String),
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ListCommand {
-    Group,
-    Users,
+    Command(CommandAction),
 }
 
 pub struct RenderContext {

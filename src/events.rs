@@ -2,10 +2,7 @@
 //! This event handler streams events from the terminal and converts them into an [`Action`]
 
 use crossterm::event::{Event, EventStream};
-use tokio::{
-    sync::broadcast::{error::SendError, Sender},
-    task::JoinHandle,
-};
+use tokio::{sync::broadcast::Sender, task::JoinHandle};
 use tokio_stream::StreamExt;
 
 use crate::dispatch::Action;

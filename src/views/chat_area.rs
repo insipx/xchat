@@ -31,7 +31,7 @@ impl Store for ChatArea {
     fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = ()> + '_>> {
         let future = async {
             match action {
-                Action::ReceiveMessage(group_id, (text, user)) => {
+                Action::ReceiveMessage(group_id, (user, text)) => {
                     let messages = self.messages.get_or_insert(&group_id);
                     messages.push(Message { text, user });
                 }

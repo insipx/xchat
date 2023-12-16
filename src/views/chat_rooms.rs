@@ -19,12 +19,11 @@ pub struct ChatRooms {
 
 impl Store for ChatRooms {
     fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = ()> + '_>> {
-        let future = async {
+        let future = async move {
             match action {
                 Action::ChangeRoom(num) => {
                     log::debug!("Change Room to {}", num)
                 }
-                Action::Ev(ev) => log::info!("Got ev {:?}", ev),
                 _ => (),
             }
         };

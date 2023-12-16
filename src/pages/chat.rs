@@ -6,7 +6,7 @@ use ratatui::{prelude::*, Frame};
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    dispatch::{Action, PageRender, Store, ViewStore, XMTPAction},
+    dispatch::{Action, CommandAction, PageRender, Store, ViewStore, XMTPAction},
     views::{ChatArea, ChatRooms, InputBox},
 };
 
@@ -19,22 +19,25 @@ enum Child {
 
 pub struct ChatPage {
     map: HashMap<Child, Box<dyn ViewStore>>,
-    tx: Sender<XMTPAction>,
+    xmtp: Sender<XMTPAction>,
 }
 
 impl ChatPage {
     /// Define the Layout for the Page
-    pub fn new(tx: Sender<XMTPAction>) -> Self {
+    pub fn new(xmtp: Sender<XMTPAction>, command: Sender<CommandAction>) -> Self {
         let mut map = HashMap::new();
 
-        let (chat_area_view, input_box, chat_rooms) =
-            (ChatArea::default(), InputBox::new(tx.clone()), ChatRooms::default());
+        let (chat_area_view, input_box, chat_rooms) = (
+            ChatArea::default(),
+            InputBox::new(xmtp.clone(), command.clone()),
+            ChatRooms::default(),
+        );
 
         map.insert(Child::ChatRooms, Box::new(chat_rooms) as Box<dyn ViewStore>);
         map.insert(Child::ChatArea, Box::new(chat_area_view) as Box<dyn ViewStore>);
         map.insert(Child::InputBox, Box::new(input_box) as Box<dyn ViewStore>);
 
-        Self { map, tx }
+        Self { map, xmtp }
     }
 }
 

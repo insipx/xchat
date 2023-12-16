@@ -8,7 +8,7 @@ use ratatui::{
 use tokio::sync::mpsc::Sender;
 
 use crate::{
-    dispatch::{Action, RenderContext, Store, ViewRender, XMTPAction},
+    dispatch::{Action, CommandAction, RenderContext, Store, ViewRender, XMTPAction},
     types::Coords,
 };
 
@@ -16,12 +16,13 @@ use crate::{
 pub struct InputBox {
     text: String,
     cursor_position: Coords,
-    tx: Sender<XMTPAction>,
+    xmtp: Sender<XMTPAction>,
+    command: Sender<CommandAction>,
 }
 
 impl InputBox {
-    pub fn new(tx: Sender<XMTPAction>) -> Self {
-        Self { text: "".into(), cursor_position: Default::default(), tx }
+    pub fn new(xmtp: Sender<XMTPAction>, command: Sender<CommandAction>) -> Self {
+        Self { text: "".into(), cursor_position: Default::default(), xmtp, command }
     }
 
     async fn handle_key_event(&mut self, code: KeyCode) {
@@ -35,11 +36,19 @@ impl InputBox {
                 self.cursor_position.x = self.cursor_position.x.saturating_sub(1);
             }
             KeyCode::Enter => {
-                // TODO: Consider spawning this.
-                self.tx
-                    .send(XMTPAction::SendMessage(self.text.drain(..).collect()).into())
-                    .await
-                    .expect("Handle bad send");
+                if self.text.starts_with("/") {
+                    log::debug!("Got a command {}", &self.text);
+                    self.command
+                        .send(self.text.drain(1..).collect::<String>().into())
+                        .await
+                        .expect("Handle bad send");
+                    self.text.clear();
+                } else {
+                    self.xmtp
+                        .send(XMTPAction::SendMessage(self.text.drain(..).collect()).into())
+                        .await
+                        .expect("Handle bad send");
+                }
             }
             _ => (),
         }
