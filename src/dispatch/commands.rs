@@ -1,4 +1,5 @@
 //! Commands events which may manipulate the state of the terminal
+use anyhow::Result;
 use tokio::{
     sync::{
         broadcast::{error::SendError, Sender as BroadcastSender},
@@ -101,13 +102,20 @@ impl Commands {
     pub fn spawn(mut self) -> JoinHandle<()> {
         tokio::spawn(async move {
             while let Some(event) = self.commands.recv().await {
-                let res = match event {
+                let res: Result<usize> = match event {
                     CommandAction::Help => self.send_message(CommandAction::help()),
-                    CommandAction::Quit => self.tx.send(Action::Quit),
+                    CommandAction::Quit => self.tx.send(Action::Quit).map_err(Into::into),
                     CommandAction::Register => Ok(0),
                     CommandAction::Generate => Ok(0),
                     CommandAction::List(_) => Ok(0),
-                    CommandAction::Create => Ok(0),
+                    CommandAction::Create => {
+                        log::debug!("Sent CreateGroup XMTP Action");
+                        self.xmtp
+                            .send(XMTPAction::CreateGroup)
+                            .await
+                            .map(|_| 0usize)
+                            .map_err(Into::into)
+                    }
                     CommandAction::Join => Ok(0),
                     CommandAction::Invite => Ok(0),
                     CommandAction::Me => Ok(0),
@@ -123,7 +131,8 @@ impl Commands {
         })
     }
 
-    pub fn send_message(&mut self, msg: String) -> Result<usize, SendError<Action>> {
-        self.tx.send(Action::ReceiveMessage(vec![0], ("xchat".into(), msg)))
+    pub fn send_message(&mut self, msg: String) -> Result<usize> {
+        self.tx.send(Action::ReceiveMessage(vec![0], ("xchat".into(), msg)))?;
+        Ok(0)
     }
 }

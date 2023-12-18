@@ -1,5 +1,8 @@
 use std::collections::HashMap;
 
+use ethers::types::Address;
+use xmtp_mls::storage::group_message::StoredGroupMessage;
+
 pub type GroupId = Vec<u8>;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -17,10 +20,6 @@ pub struct Messages {
 pub const WELCOME_MESSAGE: &str = std::include_str!("../../../static/welcome_message.txt");
 
 impl Messages {
-    pub fn focused(&self) -> &GroupId {
-        &self.focused
-    }
-
     pub fn set_focus(&mut self, id: &GroupId) {
         self.focused = id.clone();
     }
@@ -45,5 +44,25 @@ impl Messages {
         (0..lines).for_each(|_| message.user.push('\n'));
         let messages = self.get_or_insert(id);
         messages.push(message);
+    }
+
+    pub fn add_group_messages(&mut self, map: HashMap<GroupId, Vec<StoredGroupMessage>>) {
+        let extension = map
+            .into_iter()
+            .map(|(id, msgs)| (id, msgs.into_iter().map(From::from).collect::<Vec<_>>()));
+        self.inner.extend(extension);
+    }
+}
+
+impl From<StoredGroupMessage> for Message {
+    fn from(group_message: StoredGroupMessage) -> Message {
+        let text = String::from_utf8_lossy(&group_message.decrypted_message_bytes);
+        let user = group_message.sender_wallet_address;
+        let user = format!(
+            "{}...{} ",
+            user.get(0..4).unwrap(),
+            user.get(user.len() - 4..user.len()).unwrap()
+        );
+        Message { user, text: text.to_string() }
     }
 }

@@ -1,7 +1,7 @@
 //! Events to process with libxmtp
 mod streams;
 
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{anyhow, bail, Context, Error, Result};
 use directories::ProjectDirs;
@@ -14,24 +14,30 @@ use tokio::{
     },
     task::JoinHandle,
 };
+use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 use xmtp_api_grpc::grpc_api_helper::Client as ApiClient;
 use xmtp_mls::{
     builder::IdentityStrategy,
+    groups::MlsGroup,
     storage::{EncryptedMessageStore, StorageOption},
     Network,
 };
 
+use self::streams::{MessagesStream, NewGroupsOrMessages};
 use super::Action;
-use crate::cli::XChatApp;
+use crate::{
+    cli::XChatApp,
+    types::{Client, Group, GroupId},
+};
 
-type Client = xmtp_mls::client::Client<ApiClient>;
 type ClientBuilder = xmtp_mls::builder::ClientBuilder<ApiClient, LocalWallet>;
 
 /// Actions for XMTP
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum XMTPAction {
-    /// Send a group message
-    SendMessage(String),
+    /// Send message to (group_id, message)
+    SendMessage(Group, String),
+    CreateGroup,
 }
 
 impl From<XMTPAction> for Action {
@@ -50,10 +56,10 @@ enum WalletType {
 
 pub struct XMTP {
     tx: Sender<Action>,
-    rx: Receiver<XMTPAction>,
+    rx: ReceiverStream<XMTPAction>,
     wallet: LocalWallet,
     db: PathBuf,
-    client: Client,
+    client: Arc<Client>,
     opts: XChatApp,
 }
 
@@ -75,21 +81,63 @@ impl XMTP {
 
         client.register_identity().await.context("Initialization Failed")?;
 
-        Ok(Self { tx, rx, wallet, db, client, opts })
+        Ok(Self { tx, rx: ReceiverStream::new(rx), wallet, db, client: Arc::new(client), opts })
     }
 
     pub fn spawn(mut self) -> JoinHandle<()> {
         tokio::spawn(async move {
-            while let Some(event) = self.rx.recv().await {
-                let res: Result<usize, SendError<Action>> = match event {
-                    XMTPAction::SendMessage(_) => Ok(0),
-                };
+            log::info!("Spawning handle");
+            let events_stream = &mut self.rx;
+            let messages_stream = MessagesStream::new(self.client.clone()).spawn();
+            tokio::pin!(messages_stream);
 
-                if let Err(e) = res {
-                    log::error!("Action failed to send {}", e);
-                }
+            loop {
+                tokio::select! {
+                    msg_or_group = messages_stream.next() => {
+                        let action = match msg_or_group {
+                            Some(NewGroupsOrMessages::Groups(groups)) => Action::NewGroups(groups),
+                            Some(NewGroupsOrMessages::Messages(msgs)) => Action::ReceiveMessages(msgs.into_iter().map(|(g, msgs)| { (g.id, msgs)}).collect()),
+                            Some(NewGroupsOrMessages::None) => Action::Noop,
+                            None => Action::Noop,
+                        };
+                        let _ = match action {
+                            a @ Action::NewGroups(_) | a @ Action::ReceiveMessages(_) => self.tx.send(a),
+                            _ => Ok(0),
+                        };
+                    },
+                    event = events_stream.next() => {
+                        let res: Result<usize> = match event {
+                            Some(XMTPAction::SendMessage(group, m)) => {
+                                if group.is_fake() {
+                                    let _ = self.tx.send(Action::ReceiveMessage(group.id, ("xchat".into(), "Invalid Buffer, cannot send MLS messages to this buffer.".into())));
+                                    continue;
+                                }
+                                let client = self.client.clone();
+                                let _ = tokio::task::spawn_blocking(move || {
+                                    let group = group.into_mls(&client);
+                                    futures::executor::block_on(group.send_message(m.into_bytes().as_slice())).unwrap();
+                                }).await;
+                                Ok(0)
+                            },
+                            Some(XMTPAction::CreateGroup) => {
+                                log::debug!("Creating MLS group");
+                                Self::handle_create_group(&self.client, self.tx.clone())
+                            },
+                            None => Ok(0)
+                        };
+                        if let Err(e) = res {
+                            log::error!("Action failed to send {}", e);
+                        }
+                    }
+                };
             }
         })
+    }
+
+    fn handle_create_group(client: &Client, tx: Sender<Action>) -> Result<usize> {
+        let group = client.create_group()?;
+        tx.send(Action::NewGroups(vec![group.into()]))?;
+        Ok(0)
     }
 
     async fn create_client(
@@ -123,6 +171,7 @@ impl XMTP {
 
 impl Drop for XMTP {
     fn drop(&mut self) {
+        log::info!("DROPPING");
         use std::io::ErrorKind;
         //TODO: Check if wallet type is ephemeral; if so delete it
         if let Err(e) = std::fs::remove_file(self.db.clone()) {

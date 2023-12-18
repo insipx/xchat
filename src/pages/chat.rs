@@ -3,7 +3,7 @@
 use std::{collections::HashMap, future::Future, ops::DerefMut, pin::Pin};
 
 use ratatui::{prelude::*, Frame};
-use tokio::sync::mpsc::Sender;
+use tokio::sync::{broadcast::Sender as BroadcastSender, mpsc::Sender};
 
 use crate::{
     dispatch::{Action, CommandAction, PageRender, Store, ViewStore, XMTPAction},
@@ -23,13 +23,17 @@ pub struct ChatPage {
 
 impl ChatPage {
     /// Define the Layout for the Page
-    pub fn new(xmtp: Sender<XMTPAction>, command: Sender<CommandAction>) -> Self {
+    pub fn new(
+        xmtp: Sender<XMTPAction>,
+        command: Sender<CommandAction>,
+        events: BroadcastSender<Action>,
+    ) -> Self {
         let mut map = HashMap::new();
 
         let (chat_area_view, input_box, chat_rooms) = (
             ChatArea::default(),
             InputBox::new(xmtp.clone(), command.clone()),
-            ChatRooms::default(),
+            ChatRooms::new(events),
         );
 
         map.insert(Child::ChatRooms, Box::new(chat_rooms) as Box<dyn ViewStore>);

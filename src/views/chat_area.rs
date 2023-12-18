@@ -26,6 +26,7 @@ impl Default for ChatArea {
         Self { messages }
     }
 }
+// TODO: set focused group
 
 impl Store for ChatArea {
     fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = ()> + '_>> {
@@ -34,6 +35,8 @@ impl Store for ChatArea {
                 Action::ReceiveMessage(group_id, (user, text)) => {
                     self.messages.add(&group_id, Message { text, user });
                 }
+                Action::ReceiveMessages(messages) => self.messages.add_group_messages(messages),
+                Action::SetFocusedGroup(group) => self.messages.set_focus(&group.id),
                 _ => (),
             }
         };
@@ -51,7 +54,7 @@ impl ViewRender for ChatArea {
 
         let chat_area = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints(vec![Constraint::Percentage(5), Constraint::Percentage(95)])
+            .constraints(vec![Constraint::Percentage(7), Constraint::Percentage(93)])
             .split(render_ctx.area);
 
         let messages = List::new(messages)

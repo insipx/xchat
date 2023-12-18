@@ -1,6 +1,6 @@
 use std::{future::Future, pin::Pin};
 
-use crossterm::event::KeyCode;
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     widgets::{Block, Borders, Paragraph},
     Frame,
@@ -9,7 +9,7 @@ use tokio::sync::mpsc::Sender;
 
 use crate::{
     dispatch::{Action, CommandAction, RenderContext, Store, ViewRender, XMTPAction},
-    types::Coords,
+    types::{Coords, Group, GroupId},
 };
 
 #[derive(Debug, Clone)]
@@ -18,15 +18,26 @@ pub struct InputBox {
     cursor_position: Coords,
     xmtp: Sender<XMTPAction>,
     command: Sender<CommandAction>,
+    focused_group: Group,
 }
 
 impl InputBox {
     pub fn new(xmtp: Sender<XMTPAction>, command: Sender<CommandAction>) -> Self {
-        Self { text: "".into(), cursor_position: Default::default(), xmtp, command }
+        Self {
+            text: "".into(),
+            cursor_position: Default::default(),
+            xmtp,
+            command,
+            focused_group: Group::new_fake(0),
+        }
     }
 
-    async fn handle_key_event(&mut self, code: KeyCode) {
-        match code {
+    async fn handle_key_event(&mut self, key: KeyEvent) {
+        if !key.modifiers.is_empty() {
+            return;
+        }
+
+        match key.code {
             KeyCode::Char(c) => {
                 self.text.push(c);
                 self.cursor_position.x += 1;
@@ -45,7 +56,13 @@ impl InputBox {
                     self.text.clear();
                 } else {
                     self.xmtp
-                        .send(XMTPAction::SendMessage(self.text.drain(..).collect()).into())
+                        .send(
+                            XMTPAction::SendMessage(
+                                self.focused_group.clone(),
+                                self.text.drain(..).collect(),
+                            )
+                            .into(),
+                        )
                         .await
                         .expect("Handle bad send");
                 }
@@ -59,7 +76,8 @@ impl Store for InputBox {
     fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = ()> + '_>> {
         let future = async move {
             match action {
-                Action::KeyPress(code) => self.handle_key_event(code).await,
+                Action::KeyPress(key) => self.handle_key_event(key).await,
+                Action::SetFocusedGroup(group) => self.focused_group = group,
                 _ => (),
             }
         };

@@ -3,16 +3,20 @@ mod commands;
 mod xmtp;
 
 use std::{
+    collections::HashMap,
     future::{self, Future},
     pin::Pin,
 };
 
 pub use commands::*;
-use crossterm::event::KeyCode;
+use crossterm::event::KeyEvent;
 use futures::future::join_all;
 use ratatui::{prelude::Rect, Frame};
 use tokio::sync::broadcast::Receiver;
 pub use xmtp::*;
+use xmtp_mls::storage::group_message::StoredGroupMessage;
+
+use crate::types::{Group, GroupId, GroupIdWrapper};
 
 /// Generic Dispatcher that dispatches actions
 pub struct Dispatcher<'a> {
@@ -88,15 +92,18 @@ pub enum Action {
     Suspend,
     Tick,
     RenderTick,
-    KeyPress(KeyCode),
+    KeyPress(KeyEvent),
     Resize(u16, u16),
     EnterNormal,
     EnterInsert,
-    ReceiveMessage(Vec<u8>, (String, String)),
-    Noop,
+    ReceiveMessage(GroupId, (String, String)),
+    ReceiveMessages(HashMap<GroupId, Vec<StoredGroupMessage>>),
+    SetFocusedGroup(Group),
+    NewGroups(Vec<Group>),
     ChangeRoom(usize),
     XMTP(XMTPAction),
     Command(CommandAction),
+    Noop,
 }
 
 pub struct RenderContext {

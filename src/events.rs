@@ -26,7 +26,7 @@ impl Events {
                 }
 
                 let res = match event.expect("Checked Error") {
-                    Event::Key(key_event) => self.tx.send(Action::KeyPress(key_event.code)),
+                    Event::Key(key_event) => self.tx.send(Action::KeyPress(key_event)),
                     Event::Resize(x, y) => self.tx.send(Action::Resize(x, y)).map_err(Into::into),
                     _ => continue,
                 };

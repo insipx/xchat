@@ -29,8 +29,8 @@ type CrosstermTerminal = Terminal<CrosstermBackend<std::io::Stderr>>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    console_subscriber::init();
-    // self::util::init_logging()?;
+    // console_subscriber::init();
+    self::util::init_logging()?;
     #[allow(unused)]
     let app: cli::XChatApp = argh::from_env();
 
@@ -49,7 +49,7 @@ async fn main() -> Result<()> {
     let mut terminal = Terminal::new(CrosstermBackend::new(stderr()))?;
 
     // views
-    let chat_page = ChatPage::new(xmtp_tx, command_tx);
+    let chat_page = ChatPage::new(xmtp_tx, command_tx, tx.clone());
 
     render_loop(&mut terminal, tx.subscribe(), chat_page, 1_000.0, 120.0).await;
 
