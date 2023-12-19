@@ -2,6 +2,7 @@
 
 use std::{collections::HashMap, future::Future, ops::DerefMut, pin::Pin};
 
+use anyhow::Result;
 use ratatui::{prelude::*, Frame};
 use tokio::sync::{broadcast::Sender as BroadcastSender, mpsc::Sender};
 
@@ -49,12 +50,13 @@ mod buffers {
 }
 
 impl Store for ChatPage {
-    fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = ()> + '_>> {
+    fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = Result<()>> + '_>> {
         let future = async move {
             match action {
                 Action::Resize(x, y) => log::debug!("Resizing Chat Page {x}:{y}"),
                 _ => (),
             }
+            Ok(())
         };
         Box::pin(future)
     }

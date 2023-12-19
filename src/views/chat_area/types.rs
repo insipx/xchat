@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 
-use ethers::types::Address;
 use xmtp_mls::storage::group_message::StoredGroupMessage;
+
+use crate::types::Group;
 
 pub type GroupId = Vec<u8>;
 
@@ -47,10 +48,24 @@ impl Messages {
     }
 
     pub fn add_group_messages(&mut self, map: HashMap<GroupId, Vec<StoredGroupMessage>>) {
+        // log::debug!("Adding Messages {:#?}", map);
         let extension = map
             .into_iter()
             .map(|(id, msgs)| (id, msgs.into_iter().map(From::from).collect::<Vec<_>>()));
-        self.inner.extend(extension);
+        for (group, messages) in extension {
+            if let Some(msgs) = self.inner.get_mut(&group) {
+                msgs.extend(messages);
+            } else {
+                // this should not happen
+                self.inner.insert(group, messages);
+            }
+        }
+    }
+
+    pub fn add_groups(&mut self, groups: Vec<Group>) {
+        let groups =
+            groups.into_iter().filter(|g| !self.inner.contains_key(&g.id)).collect::<Vec<_>>();
+        self.inner.extend(groups.into_iter().map(|g| (g.id, Vec::new())));
     }
 }
 

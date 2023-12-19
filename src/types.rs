@@ -1,10 +1,5 @@
 use std::fmt;
 
-use xmtp_api_grpc::grpc_api_helper::Client as ApiClient;
-use xmtp_mls::groups::MlsGroup;
-
-pub type Client = xmtp_mls::client::Client<ApiClient>;
-
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct GroupIdWrapper(pub Vec<u8>);
 
@@ -51,22 +46,7 @@ impl Group {
         Group { id: vec![id], created_at: 0, last_sent_at: 0, is_fake: true }
     }
 
-    pub fn into_mls(self, client: &Client) -> MlsGroup<ApiClient> {
-        MlsGroup::new(client, self.id, self.created_at)
-    }
-
     pub fn is_fake(&self) -> bool {
         self.is_fake
-    }
-}
-
-impl<A> From<MlsGroup<'_, A>> for Group {
-    fn from(group: MlsGroup<'_, A>) -> Group {
-        Group {
-            id: group.group_id,
-            created_at: group.created_at_ns,
-            last_sent_at: 0,
-            is_fake: false,
-        }
     }
 }

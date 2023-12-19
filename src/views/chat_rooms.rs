@@ -1,6 +1,7 @@
 //! Chat Rooms View
 use std::{future::Future, pin::Pin};
 
+use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{prelude::*, widgets::*, Frame};
 use tokio::sync::broadcast::Sender;
@@ -26,24 +27,21 @@ impl ChatRooms {
         Self { rooms: vec!["xchat".into()], groups: vec![Group::new_fake(0)], focused: 0, events }
     }
 
-    async fn handle_key_event(&mut self, key: KeyEvent) {
+    async fn handle_key_event(&mut self, key: KeyEvent) -> Result<()> {
         if key.modifiers.intersects(KeyModifiers::CONTROL) {
             match key.code {
                 KeyCode::Char('n') => {
                     self.focus_next();
-                    let _ = self
-                        .events
-                        .send(Action::SetFocusedGroup(self.groups[self.focused].clone()));
+                    self.events.send(Action::SetFocusedGroup(self.groups[self.focused].clone()))?;
                 }
                 KeyCode::Char('p') => {
                     self.focus_previous();
-                    let _ = self
-                        .events
-                        .send(Action::SetFocusedGroup(self.groups[self.focused].clone()));
+                    self.events.send(Action::SetFocusedGroup(self.groups[self.focused].clone()))?;
                 }
                 _ => (),
-            }
+            };
         }
+        Ok(())
     }
 
     fn focus_next(&mut self) {
@@ -58,11 +56,12 @@ impl ChatRooms {
 }
 
 impl Store for ChatRooms {
-    fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = ()> + '_>> {
+    fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = Result<()>> + '_>> {
         let future = async move {
             match action {
-                Action::KeyPress(key) => self.handle_key_event(key).await,
+                Action::KeyPress(key) => self.handle_key_event(key).await?,
                 Action::NewGroups(groups) => {
+                    log::debug!("Got new groups {:?}", groups);
                     let groups = groups.into_iter();
                     self.groups.extend(groups.clone());
                     for group in groups {
@@ -70,7 +69,8 @@ impl Store for ChatRooms {
                     }
                 }
                 _ => (),
-            }
+            };
+            Ok(())
         };
         Box::pin(future)
     }

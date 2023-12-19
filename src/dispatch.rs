@@ -8,6 +8,7 @@ use std::{
     pin::Pin,
 };
 
+use anyhow::Result;
 pub use commands::*;
 use crossterm::event::KeyEvent;
 use futures::future::join_all;
@@ -16,7 +17,7 @@ use tokio::sync::broadcast::Receiver;
 pub use xmtp::*;
 use xmtp_mls::storage::group_message::StoredGroupMessage;
 
-use crate::types::{Group, GroupId, GroupIdWrapper};
+use crate::types::{Group, GroupId};
 
 /// Generic Dispatcher that dispatches actions
 pub struct Dispatcher<'a> {
@@ -29,6 +30,7 @@ impl<'a> Dispatcher<'a> {
         Self { stores, events }
     }
 
+    /// Asyncronously broadcasts an action to all `Stores`. Logs any errors resulting from them.
     pub async fn dispatch(&mut self) -> Action {
         let action = self.events.recv().await.unwrap();
 
@@ -43,22 +45,28 @@ impl<'a> Dispatcher<'a> {
             dispatches.push(store.update(action.clone()));
         }
 
-        join_all(dispatches).await;
+        let results = join_all(dispatches).await;
+        for result in results {
+            match result {
+                Err(e) => log::error!("{}", e),
+                _ => (),
+            }
+        }
         Action::Noop
     }
 }
 
 /// Trait that stores some state that is updated based on the defined [`Action`]
 pub trait Store {
-    fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = ()> + '_>>;
+    fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = Result<()>> + '_>>;
     fn stores(&mut self) -> Vec<&mut dyn Store> {
         Vec::new()
     }
 }
 
 impl Store for () {
-    fn update(&mut self, _: Action) -> Pin<Box<dyn Future<Output = ()> + '_>> {
-        Box::pin(future::ready(()))
+    fn update(&mut self, _: Action) -> Pin<Box<dyn Future<Output = Result<()>> + '_>> {
+        Box::pin(future::ready(Ok(())))
     }
 }
 

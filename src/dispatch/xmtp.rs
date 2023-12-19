@@ -1,36 +1,18 @@
 //! Events to process with libxmtp
 mod streams;
+pub mod xmtp_async;
 
-use std::{path::PathBuf, sync::Arc};
-
-use anyhow::{anyhow, bail, Context, Error, Result};
-use directories::ProjectDirs;
-use ethers::signers::{LocalWallet, Signer};
-use rand::{rngs::StdRng, SeedableRng};
+use anyhow::Result;
+use ethers::signers::Signer;
 use tokio::{
-    sync::{
-        broadcast::{error::SendError, Sender},
-        mpsc::Receiver,
-    },
+    sync::{broadcast::Sender, mpsc::Receiver},
     task::JoinHandle,
 };
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
-use xmtp_api_grpc::grpc_api_helper::Client as ApiClient;
-use xmtp_mls::{
-    builder::IdentityStrategy,
-    groups::MlsGroup,
-    storage::{EncryptedMessageStore, StorageOption},
-    Network,
-};
 
-use self::streams::{MessagesStream, NewGroupsOrMessages};
+use self::streams::NewGroupsOrMessages;
 use super::Action;
-use crate::{
-    cli::XChatApp,
-    types::{Client, Group, GroupId},
-};
-
-type ClientBuilder = xmtp_mls::builder::ClientBuilder<ApiClient, LocalWallet>;
+use crate::{cli::XChatApp, dispatch::xmtp::xmtp_async::AsyncXmtp, types::Group};
 
 /// Actions for XMTP
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +20,11 @@ pub enum XMTPAction {
     /// Send message to (group_id, message)
     SendMessage(Group, String),
     CreateGroup,
+    /// Invite user to a group
+    /// only admin/group creator can do this
+    Invite(Group, String),
+    /// Send information about the current user
+    Info,
 }
 
 impl From<XMTPAction> for Action {
@@ -46,140 +33,80 @@ impl From<XMTPAction> for Action {
     }
 }
 
-/*
-enum WalletType {
-    /// A Locally generated wallet for this instance of xChat
-    Ephemeral(LocalWallet),
-    External(WalletConnect)
-}
-*/
-
 pub struct XMTP {
     tx: Sender<Action>,
     rx: ReceiverStream<XMTPAction>,
-    wallet: LocalWallet,
-    db: PathBuf,
-    client: Arc<Client>,
-    opts: XChatApp,
+    xmtp: AsyncXmtp,
 }
 
 impl XMTP {
     pub async fn new(tx: Sender<Action>, rx: Receiver<XMTPAction>, opts: XChatApp) -> Result<Self> {
-        let wallet = LocalWallet::new(&mut StdRng::from_entropy());
-        let db_name = format!("{}-db", hex::encode(wallet.address()));
-        let mut db = crate::util::project_directory()
-            .ok_or(anyhow!("User does not have a valid home directory"))?
-            .data_local_dir()
-            .to_path_buf();
-        db.push(db_name);
-        let client = Self::create_client(
-            &opts,
-            db.clone(),
-            IdentityStrategy::CreateIfNotFound(wallet.clone()),
-        )
-        .await?;
-
-        client.register_identity().await.context("Initialization Failed")?;
-
-        Ok(Self { tx, rx: ReceiverStream::new(rx), wallet, db, client: Arc::new(client), opts })
+        let xmtp = AsyncXmtp::new_ephemeral(opts).await?;
+        Ok(Self { tx, rx: ReceiverStream::new(rx), xmtp })
     }
 
-    pub fn spawn(mut self) -> JoinHandle<()> {
+    pub fn spawn(self) -> JoinHandle<()> {
         tokio::spawn(async move {
-            log::info!("Spawning handle");
-            let events_stream = &mut self.rx;
-            let messages_stream = MessagesStream::new(self.client.clone()).spawn();
-            tokio::pin!(messages_stream);
-
-            loop {
-                tokio::select! {
-                    msg_or_group = messages_stream.next() => {
-                        let action = match msg_or_group {
-                            Some(NewGroupsOrMessages::Groups(groups)) => Action::NewGroups(groups),
-                            Some(NewGroupsOrMessages::Messages(msgs)) => Action::ReceiveMessages(msgs.into_iter().map(|(g, msgs)| { (g.id, msgs)}).collect()),
-                            Some(NewGroupsOrMessages::None) => Action::Noop,
-                            None => Action::Noop,
-                        };
-                        let _ = match action {
-                            a @ Action::NewGroups(_) | a @ Action::ReceiveMessages(_) => self.tx.send(a),
-                            _ => Ok(0),
-                        };
-                    },
-                    event = events_stream.next() => {
-                        let res: Result<usize> = match event {
-                            Some(XMTPAction::SendMessage(group, m)) => {
-                                if group.is_fake() {
-                                    let _ = self.tx.send(Action::ReceiveMessage(group.id, ("xchat".into(), "Invalid Buffer, cannot send MLS messages to this buffer.".into())));
-                                    continue;
-                                }
-                                let client = self.client.clone();
-                                let _ = tokio::task::spawn_blocking(move || {
-                                    let group = group.into_mls(&client);
-                                    futures::executor::block_on(group.send_message(m.into_bytes().as_slice())).unwrap();
-                                }).await;
-                                Ok(0)
-                            },
-                            Some(XMTPAction::CreateGroup) => {
-                                log::debug!("Creating MLS group");
-                                Self::handle_create_group(&self.client, self.tx.clone())
-                            },
-                            None => Ok(0)
-                        };
-                        if let Err(e) = res {
-                            log::error!("Action failed to send {}", e);
-                        }
-                    }
-                };
+            match self.event_loop().await {
+                Ok(_) => (),
+                Err(e) => log::error!("error running XMTP Events {}", e),
             }
         })
     }
 
-    fn handle_create_group(client: &Client, tx: Sender<Action>) -> Result<usize> {
-        let group = client.create_group()?;
-        tx.send(Action::NewGroups(vec![group.into()]))?;
-        Ok(0)
-    }
+    async fn event_loop(mut self) -> Result<()> {
+        log::info!("Spawning handle");
+        let events_stream = &mut self.rx;
+        let messages_stream = self.xmtp.messages();
+        tokio::pin!(messages_stream);
 
-    async fn create_client(
-        opts: &XChatApp,
-        db: PathBuf,
-        account: IdentityStrategy<LocalWallet>,
-    ) -> Result<Client> {
-        let msg_store = Self::get_encrypted_store(db)?;
-        let mut builder = ClientBuilder::new(account).store(msg_store);
-
-        if opts.local {
-            builder = builder.network(Network::Local("http://localhost:5556")).api_client(
-                ApiClient::create("http://localhost:5556".into(), false).await.unwrap(),
-            );
-        } else {
-            builder = builder.network(Network::Dev).api_client(
-                ApiClient::create("https://dev.xmtp.network:5556".into(), true).await.unwrap(),
-            );
-        }
-
-        Ok(builder.build()?)
-    }
-
-    fn get_encrypted_store(db: PathBuf) -> Result<EncryptedMessageStore> {
-        let s = db.to_string_lossy().to_string();
-        let store = EncryptedMessageStore::new_unencrypted(StorageOption::Persistent(s))
-            .context("Persistent message store could not be opened.")?;
-        Ok(store)
-    }
-}
-
-impl Drop for XMTP {
-    fn drop(&mut self) {
-        log::info!("DROPPING");
-        use std::io::ErrorKind;
-        //TODO: Check if wallet type is ephemeral; if so delete it
-        if let Err(e) = std::fs::remove_file(self.db.clone()) {
-            match e.kind() {
-                // if for some reason there is no db file we don't care anyway
-                ErrorKind::NotFound => (),
-                _ => log::error!("DB File could not be removed {}", e),
-            }
+        loop {
+            tokio::select! {
+                msg_or_group = messages_stream.next() => {
+                    let action = match msg_or_group {
+                        Some(NewGroupsOrMessages::Groups(groups)) => Action::NewGroups(groups),
+                        Some(NewGroupsOrMessages::Messages(msgs)) => Action::ReceiveMessages(msgs.into_iter().map(|(g, msgs)| { (g.id, msgs)}).collect()),
+                        Some(NewGroupsOrMessages::None) => Action::Noop,
+                        None => Action::Noop,
+                    };
+                    match action {
+                        a @ Action::NewGroups(_) | a @ Action::ReceiveMessages(_) => self.tx.send(a).map(|_| ()),
+                        _ => Ok(()),
+                    }?;
+                },
+                event = events_stream.next() => {
+                    let res: Result<()> = match event {
+                        Some(XMTPAction::SendMessage(group, m)) => {
+                            if group.is_fake() {
+                                self.tx.send(Action::ReceiveMessage(group.id, ("xchat".into(), "Invalid Buffer, cannot send MLS messages to this buffer.".into())))?;
+                                continue;
+                            }
+                            self.xmtp.send_message(group, m).await
+                        },
+                        Some(XMTPAction::CreateGroup) => {
+                            log::debug!("Creating MLS group");
+                            let _ = self.xmtp.create_group().await?;
+                            Ok(())
+                        },
+                        Some(XMTPAction::Invite(group, user)) => {
+                            self.xmtp.invite_user(group, user).await?;
+                            Ok(())
+                        },
+                        Some(XMTPAction::Info) => {
+                            let mut info_message = format!("-------------- Information --------------");
+                            info_message.push_str(&format!("\nWallet Address: {}", hex::encode(self.xmtp.wallet.address())));
+                            info_message.push_str(&format!("\nDatabase: {}", self.xmtp.db.to_str().unwrap_or("not displayable (not utf8?)")));
+                            info_message.push_str(&format!("\nInstallation Public Key: {}", hex::encode(self.xmtp.installation_public_key())));
+                            self.tx.send(Action::ReceiveMessage(vec![0], ("xchat".into(), info_message)))?;
+                            Ok(())
+                        }
+                        None => Ok(())
+                    };
+                    if let Err(e) = res {
+                        log::error!("Action failed to send {}", e);
+                    }
+                }
+            };
         }
     }
 }

@@ -1,14 +1,17 @@
 //! Commands events which may manipulate the state of the terminal
-use anyhow::Result;
+use anyhow::{bail, Result};
 use tokio::{
     sync::{
-        broadcast::{error::SendError, Sender as BroadcastSender},
+        broadcast::Sender as BroadcastSender,
         mpsc::{Receiver, Sender},
     },
     task::JoinHandle,
 };
 
-use crate::dispatch::{Action, XMTPAction};
+use crate::{
+    dispatch::{Action, XMTPAction},
+    types::Group,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CommandAction {
@@ -22,7 +25,7 @@ pub enum CommandAction {
     /// Join a group
     Join,
     /// Invite to a group
-    Invite,
+    Invite(Group, String),
     /// Information about you (Wallet Address, ENS Profile, etc.)
     Me,
     Quit,
@@ -54,23 +57,6 @@ pub struct Commands {
     commands: Receiver<CommandAction>,
 }
 
-impl From<String> for CommandAction {
-    fn from(s: String) -> CommandAction {
-        match s.as_str() {
-            "help" => CommandAction::Help,
-            "quit" => CommandAction::Quit,
-            "register" => CommandAction::Register,
-            "list" => CommandAction::List(ListCommand::Users),
-            "generate" => CommandAction::Generate,
-            "create" => CommandAction::Create,
-            "join" => CommandAction::Join,
-            "invite" => CommandAction::Invite,
-            "me" => CommandAction::Me,
-            s => CommandAction::Unknown(s.into()),
-        }
-    }
-}
-
 impl CommandAction {
     /// Return a help message for these commands
     fn help() -> String {
@@ -88,6 +74,29 @@ impl CommandAction {
         );
         msg
     }
+
+    pub fn from_string(command: String, group: &Group) -> Result<Self> {
+        let command = command.split(" ").collect::<Vec<_>>();
+        let cmd = match command[0] {
+            "help" => CommandAction::Help,
+            "quit" => CommandAction::Quit,
+            "register" => CommandAction::Register,
+            "list" => CommandAction::List(ListCommand::Users),
+            "generate" => CommandAction::Generate,
+            "create" => CommandAction::Create,
+            "join" => CommandAction::Join,
+            "invite" => {
+                if command.get(1).is_some() {
+                    CommandAction::Invite(group.clone(), command[1].into())
+                } else {
+                    bail!("`/invite` requires indicating the wallet address of the user to invite");
+                }
+            }
+            "me" => CommandAction::Me,
+            s => CommandAction::Unknown(s.into()),
+        };
+        Ok(cmd)
+    }
 }
 
 impl Commands {
@@ -99,40 +108,44 @@ impl Commands {
         Self { tx, xmtp, commands }
     }
 
-    pub fn spawn(mut self) -> JoinHandle<()> {
+    pub fn spawn(self) -> JoinHandle<()> {
         tokio::spawn(async move {
-            while let Some(event) = self.commands.recv().await {
-                let res: Result<usize> = match event {
-                    CommandAction::Help => self.send_message(CommandAction::help()),
-                    CommandAction::Quit => self.tx.send(Action::Quit).map_err(Into::into),
-                    CommandAction::Register => Ok(0),
-                    CommandAction::Generate => Ok(0),
-                    CommandAction::List(_) => Ok(0),
-                    CommandAction::Create => {
-                        log::debug!("Sent CreateGroup XMTP Action");
-                        self.xmtp
-                            .send(XMTPAction::CreateGroup)
-                            .await
-                            .map(|_| 0usize)
-                            .map_err(Into::into)
-                    }
-                    CommandAction::Join => Ok(0),
-                    CommandAction::Invite => Ok(0),
-                    CommandAction::Me => Ok(0),
-                    CommandAction::Unknown(s) => self.send_message(format!(
-                        "Unknown command: /{}. use `/help` to get a list of commands",
-                        s
-                    )),
-                };
-                if let Err(e) = res {
-                    log::error!("Help message failed to send {}", e);
-                }
+            match self.event_loop().await {
+                Ok(v) => v,
+                Err(e) => log::error!("command failed {}", e),
             }
         })
     }
 
-    pub fn send_message(&mut self, msg: String) -> Result<usize> {
+    async fn event_loop(mut self) -> Result<()> {
+        while let Some(event) = self.commands.recv().await {
+            match event {
+                CommandAction::Help => self.send_message(CommandAction::help()).map(|_| ())?,
+                CommandAction::Quit => self.tx.send(Action::Quit).map(|_| ())?,
+                CommandAction::Register => (),
+                CommandAction::Generate => (),
+                CommandAction::List(_) => (),
+                CommandAction::Create => {
+                    log::debug!("Sent CreateGroup XMTP Action");
+                    self.xmtp.send(XMTPAction::CreateGroup).await?;
+                }
+                CommandAction::Join => (),
+                CommandAction::Invite(group, user) => {
+                    log::debug!("Inviting to group");
+                    self.xmtp.send(XMTPAction::Invite(group, user)).await?;
+                }
+                CommandAction::Me => self.xmtp.send(XMTPAction::Info).await?,
+                CommandAction::Unknown(s) => self.send_message(format!(
+                    "Unknown command: /{}. use `/help` to get a list of commands",
+                    s
+                ))?,
+            };
+        }
+        Ok(())
+    }
+
+    pub fn send_message(&mut self, msg: String) -> Result<()> {
         self.tx.send(Action::ReceiveMessage(vec![0], ("xchat".into(), msg)))?;
-        Ok(0)
+        Ok(())
     }
 }

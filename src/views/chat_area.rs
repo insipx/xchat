@@ -3,6 +3,7 @@ mod types;
 
 use std::{future::Future, pin::Pin};
 
+use anyhow::Result;
 use ratatui::{prelude::*, widgets::*, Frame};
 
 use self::types::*;
@@ -19,26 +20,36 @@ impl Default for ChatArea {
         messages.add(&vec![0], Message { user: "xchat".into(), text: WELCOME_MESSAGE.into() });
         messages.add(
             &vec![0],
-            Message { user: "xchat".into(), text: "Hello! Welcome to xChat".into() },
+            Message {
+                user: "xchat".into(),
+                text: "Hello! Welcome to xChat. Use the `/help` command to get started!".into(),
+            },
         );
         messages.focused = vec![0];
 
         Self { messages }
     }
 }
-// TODO: set focused group
 
 impl Store for ChatArea {
-    fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = ()> + '_>> {
+    fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = Result<()>> + '_>> {
         let future = async {
             match action {
                 Action::ReceiveMessage(group_id, (user, text)) => {
                     self.messages.add(&group_id, Message { text, user });
                 }
-                Action::ReceiveMessages(messages) => self.messages.add_group_messages(messages),
+                Action::ReceiveMessages(messages) => {
+                    log::debug!("Received {} groups with new messages", messages.len());
+                    self.messages.add_group_messages(messages);
+                }
                 Action::SetFocusedGroup(group) => self.messages.set_focus(&group.id),
+                Action::NewGroups(groups) => {
+                    log::debug!("Got new groups {:?}", groups);
+                    self.messages.add_groups(groups);
+                }
                 _ => (),
-            }
+            };
+            Ok(())
         };
         Box::pin(future)
     }

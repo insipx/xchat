@@ -1,5 +1,6 @@
 use std::{future::Future, pin::Pin};
 
+use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::{
     widgets::{Block, Borders, Paragraph},
@@ -9,7 +10,7 @@ use tokio::sync::mpsc::Sender;
 
 use crate::{
     dispatch::{Action, CommandAction, RenderContext, Store, ViewRender, XMTPAction},
-    types::{Coords, Group, GroupId},
+    types::{Coords, Group},
 };
 
 #[derive(Debug, Clone)]
@@ -32,9 +33,9 @@ impl InputBox {
         }
     }
 
-    async fn handle_key_event(&mut self, key: KeyEvent) {
+    async fn handle_key_event(&mut self, key: KeyEvent) -> Result<()> {
         if !key.modifiers.is_empty() {
-            return;
+            return Ok(());
         }
 
         match key.code {
@@ -49,10 +50,9 @@ impl InputBox {
             KeyCode::Enter => {
                 if self.text.starts_with("/") {
                     log::debug!("Got a command {}", &self.text);
-                    self.command
-                        .send(self.text.drain(1..).collect::<String>().into())
-                        .await
-                        .expect("Handle bad send");
+                    let cmd = self.text.drain(1..).collect::<String>();
+                    let cmd = CommandAction::from_string(cmd, &self.focused_group)?;
+                    self.command.send(cmd).await.expect("Handle bad send");
                     self.text.clear();
                 } else {
                     self.xmtp
@@ -68,18 +68,20 @@ impl InputBox {
                 }
             }
             _ => (),
-        }
+        };
+        Ok(())
     }
 }
 
 impl Store for InputBox {
-    fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = ()> + '_>> {
+    fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = Result<()>> + '_>> {
         let future = async move {
             match action {
-                Action::KeyPress(key) => self.handle_key_event(key).await,
+                Action::KeyPress(key) => self.handle_key_event(key).await?,
                 Action::SetFocusedGroup(group) => self.focused_group = group,
                 _ => (),
-            }
+            };
+            Ok(())
         };
 
         Box::pin(future)
