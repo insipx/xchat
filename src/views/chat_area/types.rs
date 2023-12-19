@@ -72,7 +72,7 @@ impl Messages {
 impl From<StoredGroupMessage> for Message {
     fn from(group_message: StoredGroupMessage) -> Message {
         let text = String::from_utf8_lossy(&group_message.decrypted_message_bytes);
-        let user = group_message.sender_wallet_address;
+        let user = group_message.sender_account_address;
         let user = format!(
             "{}...{} ",
             user.get(0..4).unwrap(),
