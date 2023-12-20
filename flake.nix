@@ -43,6 +43,7 @@
             binaryen
             linters
             tokio-console
+            cargo-nextest
 
             weechat
           ] ++ lib.optionals isDarwin [

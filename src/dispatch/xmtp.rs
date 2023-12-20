@@ -89,6 +89,7 @@ impl XMTP {
                             Ok(())
                         },
                         Some(XMTPAction::Invite(group, user)) => {
+                            let user = if !user.starts_with("0x") { format!("0x{}", user) } else { user };
                             self.xmtp.invite_user(group, user).await?;
                             Ok(())
                         },
