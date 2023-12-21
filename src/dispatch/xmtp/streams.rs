@@ -51,6 +51,7 @@ impl MessagesStream {
         })
     }
 
+    #[tracing::instrument]
     async fn poll_xmtp(&mut self) -> Result<NewGroupsOrMessages> {
         let groups = self.groups().await?;
 
