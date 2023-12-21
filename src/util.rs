@@ -4,7 +4,9 @@ use anyhow::Result;
 use directories::ProjectDirs;
 use lazy_static::lazy_static;
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{self, layer::SubscriberExt, util::SubscriberInitExt, Layer};
+use tracing_subscriber::{
+    self, fmt::format::FmtSpan, layer::SubscriberExt, util::SubscriberInitExt, Layer,
+};
 
 lazy_static! {
     pub static ref PROJECT_NAME: String = env!("CARGO_CRATE_NAME").to_uppercase().to_string();
@@ -46,6 +48,7 @@ pub fn init_logging() -> Result<()> {
         .with_writer(log_file)
         .with_target(false)
         .with_ansi(false)
+        .with_span_events(FmtSpan::CLOSE | FmtSpan::ENTER)
         .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env());
     tracing_subscriber::registry().with(file_subscriber).with(ErrorLayer::default()).init();
     Ok(())

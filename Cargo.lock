@@ -3026,7 +3026,7 @@ dependencies = [
 [[package]]
 name = "openmls"
 version = "0.5.0"
-source = "git+https://github.com/xmtp/openmls?branch=main#5764be718b112819e08893a55dfa38fd6ece5727"
+source = "git+https://github.com/xmtp/openmls?branch=main#2f50273e3139bd022399041783f87dbeae2173be"
 dependencies = [
  "backtrace",
  "itertools 0.10.5",
@@ -3047,7 +3047,7 @@ dependencies = [
 [[package]]
 name = "openmls_basic_credential"
 version = "0.2.0"
-source = "git+https://github.com/xmtp/openmls?branch=main#5764be718b112819e08893a55dfa38fd6ece5727"
+source = "git+https://github.com/xmtp/openmls?branch=main#2f50273e3139bd022399041783f87dbeae2173be"
 dependencies = [
  "ed25519-dalek",
  "openmls_traits",
@@ -3060,7 +3060,7 @@ dependencies = [
 [[package]]
 name = "openmls_memory_keystore"
 version = "0.2.0"
-source = "git+https://github.com/xmtp/openmls?branch=main#5764be718b112819e08893a55dfa38fd6ece5727"
+source = "git+https://github.com/xmtp/openmls?branch=main#2f50273e3139bd022399041783f87dbeae2173be"
 dependencies = [
  "openmls_traits",
  "serde_json",
@@ -3070,7 +3070,7 @@ dependencies = [
 [[package]]
 name = "openmls_rust_crypto"
 version = "0.2.0"
-source = "git+https://github.com/xmtp/openmls?branch=main#5764be718b112819e08893a55dfa38fd6ece5727"
+source = "git+https://github.com/xmtp/openmls?branch=main#2f50273e3139bd022399041783f87dbeae2173be"
 dependencies = [
  "aes-gcm",
  "chacha20poly1305",
@@ -3094,7 +3094,7 @@ dependencies = [
 [[package]]
 name = "openmls_traits"
 version = "0.2.0"
-source = "git+https://github.com/xmtp/openmls?branch=main#5764be718b112819e08893a55dfa38fd6ece5727"
+source = "git+https://github.com/xmtp/openmls?branch=main#2f50273e3139bd022399041783f87dbeae2173be"
 dependencies = [
  "serde",
  "tls_codec 0.3.0",
@@ -5983,7 +5983,7 @@ dependencies = [
 [[package]]
 name = "xmtp_api_grpc"
 version = "0.1.0"
-source = "git+https://github.com/xmtp/libxmtp.git?branch=main#3e59039a15f75796133cc47c142555d81ddf6769"
+source = "git+https://github.com/xmtp/libxmtp.git?branch=main#18edd257d413e59e4a282db97852ec8c430b0626"
 dependencies = [
  "base64 0.21.5",
  "http-body",
@@ -6006,7 +6006,7 @@ dependencies = [
 [[package]]
 name = "xmtp_cryptography"
 version = "0.1.0"
-source = "git+https://github.com/xmtp/libxmtp.git?branch=main#3e59039a15f75796133cc47c142555d81ddf6769"
+source = "git+https://github.com/xmtp/libxmtp.git?branch=main#18edd257d413e59e4a282db97852ec8c430b0626"
 dependencies = [
  "curve25519-dalek",
  "ecdsa 0.15.1",
@@ -6026,10 +6026,11 @@ dependencies = [
 [[package]]
 name = "xmtp_mls"
 version = "0.1.0"
-source = "git+https://github.com/xmtp/libxmtp.git?branch=main#3e59039a15f75796133cc47c142555d81ddf6769"
+source = "git+https://github.com/xmtp/libxmtp.git?branch=main#18edd257d413e59e4a282db97852ec8c430b0626"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
  "diesel",
  "diesel_migrations",
  "ethers",
@@ -6059,7 +6060,7 @@ dependencies = [
 [[package]]
 name = "xmtp_proto"
 version = "0.1.0"
-source = "git+https://github.com/xmtp/libxmtp.git?branch=main#3e59039a15f75796133cc47c142555d81ddf6769"
+source = "git+https://github.com/xmtp/libxmtp.git?branch=main#18edd257d413e59e4a282db97852ec8c430b0626"
 dependencies = [
  "async-trait",
  "pbjson",

@@ -88,9 +88,11 @@ impl MessagesStream {
                 .find_groups(None, last_created_at, None, None)
                 .context("Could not find groups")?;
 
-            let groups =
+            let groups: Vec<_> =
                 groups.into_iter().map(|g| Group::new(g.group_id, g.created_at_ns, 0)).collect();
-            log::debug!("Found groups {:?}", groups);
+            if groups.len() > 0 {
+                log::debug!("Found groups {:?}", groups);
+            }
             Ok::<_, Error>(groups)
         })
         .await??)
