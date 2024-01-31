@@ -2,10 +2,10 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use anyhow::{anyhow, Context, Error, Result};
+use anyhow::{anyhow, Context, Result};
 use ethers::signers::{LocalWallet, Signer};
 use rand::{rngs::StdRng, SeedableRng};
-use tokio::task::JoinError;
+use tokio::{sync::Mutex, task::JoinError};
 use tokio_stream::Stream;
 use xmtp_api_grpc::grpc_api_helper::Client as ApiClient;
 use xmtp_mls::{
@@ -51,10 +51,11 @@ enum WalletType {
 */
 
 #[allow(unused)]
+#[derive(Debug, Clone)]
 pub struct AsyncXmtp {
     pub wallet: LocalWallet,
     pub db: PathBuf,
-    client: Arc<Client>,
+    client: Arc<Mutex<Client>>,
 }
 
 impl AsyncXmtp {
@@ -75,7 +76,7 @@ impl AsyncXmtp {
 
         client.register_identity().await.context("Initialization Failed")?;
 
-        Ok(Self { wallet, db, client: Arc::new(client) })
+        Ok(Self { wallet, db, client: Arc::new(Mutex::new(client)) })
     }
 
     async fn create_client(
@@ -111,43 +112,36 @@ impl AsyncXmtp {
         MessagesStream::new(self.client.clone()).spawn()
     }
 
+    // #[tracing::instrument(name = "send_message", skip(self, to))]
     pub async fn send_message(&self, to: Group, msg: String) -> Result<()> {
-        let client = self.client.clone();
-        let res = tokio::task::spawn_blocking(move || {
-            let group = to.into_mls(&client);
-            let msg = msg.into_bytes();
-            futures::executor::block_on(group.send_message(msg.as_slice()))?;
-            Ok(())
-        })
-        .await;
-        unwrap_join(res)
+        let client = self.client.lock().await;
+        let now = std::time::Instant::now();
+        let group = to.into_mls(&client);
+        let msg = msg.into_bytes();
+        group.send_message(msg.as_slice()).await?;
+        let after = std::time::Instant::now();
+        log::debug!("Took {:?} to send message", after - now);
+        Ok(())
     }
 
     pub async fn create_group(&self) -> Result<Group> {
         let client = self.client.clone();
-        let group = tokio::task::spawn_blocking(move || {
-            let group = client.create_group()?;
-            Ok::<_, Error>(Group::from(group))
-        })
-        .await;
-        let group = unwrap_join(group)?;
+        let client = client.lock().await;
+        let group = client.create_group()?;
         Ok(group.into())
     }
 
     pub async fn invite_user(&self, group: Group, user: String) -> Result<()> {
         let client = self.client.clone();
-        let res = tokio::task::spawn_blocking(move || {
-            let group = group.into_mls(&client);
-            futures::executor::block_on(group.add_members(vec![user]))?;
-            Ok::<_, Error>(())
-        })
-        .await;
-        unwrap_join(res)?;
+        let client = client.lock().await;
+        let group = group.into_mls(&client);
+        group.add_members(vec![user]).await?;
         Ok(())
     }
 
-    pub fn installation_public_key(&self) -> Vec<u8> {
-        self.client.installation_public_key()
+    pub async fn installation_public_key(&self) -> Vec<u8> {
+        let client = self.client.lock().await;
+        client.installation_public_key()
     }
 }
 
@@ -166,6 +160,7 @@ impl Drop for AsyncXmtp {
     }
 }
 
+#[allow(dead_code)]
 fn unwrap_join<T>(res: Result<T, JoinError>) -> T {
     match res {
         Ok(v) => v,

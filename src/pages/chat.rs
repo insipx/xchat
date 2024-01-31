@@ -1,47 +1,38 @@
 //! Layout handling of the terminal screen buffer
 
-use std::{collections::HashMap, future::Future, ops::DerefMut, pin::Pin};
+use std::{future::Future, pin::Pin};
 
 use anyhow::Result;
 use ratatui::{prelude::*, Frame};
 use tokio::sync::{broadcast::Sender as BroadcastSender, mpsc::Sender};
 
 use crate::{
-    dispatch::{Action, CommandAction, PageRender, Store, ViewStore, XMTPAction},
+    dispatch::{Action, CommandAction, PageRender, Store, ViewRender, XMTPAction},
     views::{ChatArea, ChatRooms, InputBox},
 };
 
-#[derive(PartialEq, Eq, Copy, Clone, Hash)]
-enum Child {
-    ChatRooms,
-    ChatArea,
-    InputBox,
+const MIN_CHAT_HEIGHT: usize = 1;
+
+pub struct ChatPage<'a> {
+    input_box: InputBox<'a>,
+    chat_area: ChatArea,
+    rooms: ChatRooms,
 }
 
-pub struct ChatPage {
-    map: HashMap<Child, Box<dyn ViewStore>>,
-}
-
-impl ChatPage {
+impl ChatPage<'_> {
     /// Define the Layout for the Page
     pub fn new(
         xmtp: Sender<XMTPAction>,
         command: Sender<CommandAction>,
         events: BroadcastSender<Action>,
     ) -> Self {
-        let mut map = HashMap::new();
-
-        let (chat_area_view, input_box, chat_rooms) = (
-            ChatArea::default(),
+        let (input_box, chat_area, rooms) = (
             InputBox::new(xmtp.clone(), command.clone()),
+            ChatArea::default(),
             ChatRooms::new(events),
         );
 
-        map.insert(Child::ChatRooms, Box::new(chat_rooms) as Box<dyn ViewStore>);
-        map.insert(Child::ChatArea, Box::new(chat_area_view) as Box<dyn ViewStore>);
-        map.insert(Child::InputBox, Box::new(input_box) as Box<dyn ViewStore>);
-
-        Self { map }
+        Self { input_box, chat_area, rooms }
     }
 }
 
@@ -49,7 +40,7 @@ mod buffers {
     pub const CHAT_AREA: usize = 1;
 }
 
-impl Store for ChatPage {
+impl Store for ChatPage<'_> {
     fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = Result<()>> + '_>> {
         let future = async move {
             match action {
@@ -62,24 +53,30 @@ impl Store for ChatPage {
     }
 
     fn stores(&mut self) -> Vec<&mut dyn Store> {
-        self.map.values_mut().map(|s| s.deref_mut() as &mut dyn Store).collect()
+        vec![
+            &mut self.input_box as &mut dyn Store,
+            &mut self.chat_area as &mut dyn Store,
+            &mut self.rooms as &mut dyn Store,
+        ]
     }
 }
 
-impl PageRender for ChatPage {
+impl PageRender for ChatPage<'_> {
     fn render(&self, frame: &mut Frame) {
         let screen = Layout::default()
             .direction(Direction::Horizontal)
             .constraints(vec![Constraint::Percentage(10), Constraint::Percentage(90)])
             .split(frame.size());
 
+        let height = std::cmp::max(self.input_box.lines().len(), MIN_CHAT_HEIGHT) as u16 + 2;
+
         let chat_area = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Percentage(95), Constraint::Percentage(5)])
+            .constraints(vec![Constraint::Min(10), Constraint::Length(height)])
             .split(screen[buffers::CHAT_AREA]);
 
-        self.map.get(&Child::ChatRooms).unwrap().render(frame, screen[0].into());
-        self.map.get(&Child::ChatArea).unwrap().render(frame, chat_area[0].into());
-        self.map.get(&Child::InputBox).unwrap().render(frame, chat_area[1].into());
+        self.rooms.render(frame, screen[0].into());
+        self.chat_area.render(frame, chat_area[0].into());
+        self.input_box.render(frame, chat_area[1].into());
     }
 }

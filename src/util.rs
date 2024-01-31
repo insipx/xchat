@@ -42,14 +42,17 @@ pub fn init_logging() -> Result<()> {
             .or_else(|_| std::env::var(LOG_ENV.clone()))
             .unwrap_or_else(|_| format!("{}=info", env!("CARGO_CRATE_NAME"))),
     );
+
     let file_subscriber = tracing_subscriber::fmt::layer()
-        .with_file(true)
+        .with_file(false)
         .with_line_number(true)
         .with_writer(log_file)
-        .with_target(false)
+        .with_target(true)
         .with_ansi(false)
-        .with_span_events(FmtSpan::CLOSE | FmtSpan::ENTER)
+        .with_span_events(FmtSpan::CLOSE)
         .with_filter(tracing_subscriber::filter::EnvFilter::from_default_env());
+
     tracing_subscriber::registry().with(file_subscriber).with(ErrorLayer::default()).init();
+
     Ok(())
 }

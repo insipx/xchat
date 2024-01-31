@@ -8,7 +8,7 @@ mod views;
 
 use std::io::stderr;
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
     ExecutableCommand,
@@ -30,7 +30,7 @@ type CrosstermTerminal = Terminal<CrosstermBackend<std::io::Stderr>>;
 #[tokio::main]
 async fn main() -> Result<()> {
     // console_subscriber::init();
-    self::util::init_logging()?;
+    self::util::init_logging().map_err(|_| anyhow!("Logging did not init"))?;
     #[allow(unused)]
     let app: cli::XChatApp = argh::from_env();
 
@@ -58,13 +58,14 @@ async fn main() -> Result<()> {
     commands.abort();
     disable_raw_mode().unwrap();
     stderr().execute(LeaveAlternateScreen)?;
+
     Ok(())
 }
 
 pub async fn render_loop(
     terminal: &mut CrosstermTerminal,
     mut events: Receiver<Action>,
-    mut chat_page: ChatPage,
+    mut chat_page: ChatPage<'_>,
     tick_rate: f64,
     frame_rate: f64,
 ) {

@@ -44,6 +44,7 @@
             linters
             tokio-console
             cargo-nextest
+            inferno
 
             weechat
           ] ++ lib.optionals isDarwin [

@@ -17,12 +17,16 @@ pub struct ChatArea {
 impl Default for ChatArea {
     fn default() -> Self {
         let mut messages = Messages::default();
-        messages.add(&vec![0], Message { user: "xchat".into(), text: WELCOME_MESSAGE.into() });
+        messages.add(
+            &vec![0],
+            Message { user: "xchat".into(), text: WELCOME_MESSAGE.into(), ..Default::default() },
+        );
         messages.add(
             &vec![0],
             Message {
                 user: "xchat".into(),
                 text: "Hello! Welcome to xChat. Use the `/help` command to get started!".into(),
+                ..Default::default()
             },
         );
         messages.focused = vec![0];
@@ -35,8 +39,8 @@ impl Store for ChatArea {
     fn update(&mut self, action: Action) -> Pin<Box<dyn Future<Output = Result<()>> + '_>> {
         let future = async {
             match action {
-                Action::ReceiveMessage(group_id, (user, text)) => {
-                    self.messages.add(&group_id, Message { text, user });
+                Action::FakeMessage(group_id, (user, text)) => {
+                    self.messages.add(&group_id, Message { text, user, ..Default::default() });
                 }
                 Action::ReceiveMessages(messages) => {
                     log::debug!("Received {} groups with new messages", messages.len());

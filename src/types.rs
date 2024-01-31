@@ -19,13 +19,6 @@ impl From<Vec<u8>> for GroupIdWrapper {
 }
 pub type GroupId = Vec<u8>;
 
-/// The Default Position (0, 0) Represents the Top left area.
-#[derive(Copy, Clone, Debug, PartialEq, Eq, Default)]
-pub struct Coords {
-    pub x: usize,
-    pub y: usize,
-}
-
 // can form a group by calling `MlsGroup::new()` and passing our client reference
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub struct Group {

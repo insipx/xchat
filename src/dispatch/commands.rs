@@ -145,7 +145,7 @@ impl Commands {
     }
 
     pub fn send_message(&mut self, msg: String) -> Result<()> {
-        self.tx.send(Action::ReceiveMessage(vec![0], ("xchat".into(), msg)))?;
+        self.tx.send(Action::FakeMessage(vec![0], ("xchat".into(), msg)))?;
         Ok(())
     }
 }

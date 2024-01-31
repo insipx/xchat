@@ -1,15 +1,29 @@
 use std::collections::HashMap;
 
-use xmtp_mls::storage::group_message::StoredGroupMessage;
+use xmtp_mls::storage::group_message::{GroupMessageKind, StoredGroupMessage};
 
 use crate::types::Group;
 
 pub type GroupId = Vec<u8>;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Message {
     pub user: String,
+    pub kind: GroupMessageKind,
+    // timestamp of message in nano-seconds
+    pub sent_at: i64,
     pub text: String,
+}
+
+impl Default for Message {
+    fn default() -> Self {
+        Message {
+            user: Default::default(),
+            kind: GroupMessageKind::Application,
+            text: Default::default(),
+            sent_at: 0,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -35,7 +49,7 @@ impl Messages {
 
     pub fn get(&self) -> (Vec<String>, Vec<String>) {
         let messages = &self.inner.get(&self.focused).expect("Focused group id must always exist");
-        messages.iter().cloned().map(|Message { user, text }| (user, text)).unzip()
+        messages.iter().cloned().map(|Message { user, text, .. }| (user, text)).unzip()
     }
 
     pub fn add(&mut self, id: &GroupId, mut message: Message) {
@@ -49,9 +63,16 @@ impl Messages {
 
     pub fn add_group_messages(&mut self, map: HashMap<GroupId, Vec<StoredGroupMessage>>) {
         // log::debug!("Adding Messages {:#?}", map);
-        let extension = map
-            .into_iter()
-            .map(|(id, msgs)| (id, msgs.into_iter().map(From::from).collect::<Vec<_>>()));
+        let extension = map.into_iter().map(|(id, msgs)| {
+            (
+                id,
+                msgs.into_iter()
+                    .map(Message::from)
+                    .filter(|m| matches!(m.kind, GroupMessageKind::Application))
+                    .collect::<Vec<_>>(),
+            )
+        });
+
         for (group, messages) in extension {
             if let Some(msgs) = self.inner.get_mut(&group) {
                 msgs.extend(messages);
@@ -60,6 +81,7 @@ impl Messages {
                 self.inner.insert(group, messages);
             }
         }
+        // log::debug!("Messages {:#?}", self.inner.values().collect::<Vec<_>>());
     }
 
     pub fn add_groups(&mut self, groups: Vec<Group>) {
@@ -78,6 +100,11 @@ impl From<StoredGroupMessage> for Message {
             user.get(0..4).unwrap(),
             user.get(user.len() - 4..user.len()).unwrap()
         );
-        Message { user, text: text.to_string() }
+        Message {
+            user,
+            text: text.to_string(),
+            kind: group_message.kind,
+            sent_at: group_message.sent_at_ns,
+        }
     }
 }
