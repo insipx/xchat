@@ -1,31 +1,27 @@
 //! Async Interface to libXMTP
 
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::HashSet, fmt, path::PathBuf, sync::Arc};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context as _, Error, Result};
 use ethers::signers::{LocalWallet, Signer};
 use rand::{rngs::StdRng, SeedableRng};
-use tokio::{sync::Mutex, task::JoinError};
-use tokio_stream::Stream;
+use tokio::{sync::mpsc, task::JoinError};
+use tokio_stream::{wrappers::UnboundedReceiverStream, Stream, StreamExt};
 use xmtp_api_grpc::grpc_api_helper::Client as ApiClient;
 use xmtp_mls::{
     builder::IdentityStrategy,
     groups::MlsGroup,
-    storage::{EncryptedMessageStore, StorageOption},
+    storage::{group_message::StoredGroupMessage, EncryptedMessageStore, StorageOption},
     Network,
 };
 
-use crate::{
-    cli::XChatApp,
-    dispatch::xmtp::streams::{MessagesStream, NewGroupsOrMessages},
-    types::Group,
-};
+use crate::{cli::XChatApp, types::Group};
 
 pub type Client = xmtp_mls::client::Client<ApiClient>;
 type ClientBuilder = xmtp_mls::builder::ClientBuilder<ApiClient, LocalWallet>;
 
 impl Group {
-    pub fn into_mls(self, client: &Client) -> MlsGroup<ApiClient> {
+    pub fn into_mls<'a>(self, client: &'a Client) -> MlsGroup<'a, ApiClient> {
         MlsGroup::new(client, self.id, self.created_at)
     }
 }
@@ -51,11 +47,20 @@ enum WalletType {
 */
 
 #[allow(unused)]
-#[derive(Debug, Clone)]
 pub struct AsyncXmtp {
     pub wallet: LocalWallet,
     pub db: PathBuf,
-    client: Arc<Mutex<Client>>,
+    pub client: Arc<Client>,
+}
+
+impl fmt::Debug for AsyncXmtp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("AsyncXmtp")
+            .field("wallet", &self.wallet)
+            .field("db", &self.db)
+            .field("client", &self.client)
+            .finish()
+    }
 }
 
 impl AsyncXmtp {
@@ -76,7 +81,7 @@ impl AsyncXmtp {
 
         client.register_identity().await.context("Initialization Failed")?;
 
-        Ok(Self { wallet, db, client: Arc::new(Mutex::new(client)) })
+        Ok(Self { wallet, db, client: Arc::new(client) })
     }
 
     async fn create_client(
@@ -107,16 +112,20 @@ impl AsyncXmtp {
         Ok(store)
     }
 
-    /// Get a stream of new messages and groups
-    pub fn messages(&self) -> impl Stream<Item = NewGroupsOrMessages> {
-        MessagesStream::new(self.client.clone()).spawn()
+    pub async fn subscribe_conversations(&self) -> Result<impl Stream<Item = Group> + '_> {
+        let stream = self.client.stream_conversations().await?.map(Group::from);
+        Ok(stream)
+    }
+
+    pub async fn messages(&self) -> Result<AsyncMessagesStream> {
+        let stream = AsyncMessagesStream::new(self.client.clone());
+        Ok(stream)
     }
 
     // #[tracing::instrument(name = "send_message", skip(self, to))]
     pub async fn send_message(&self, to: Group, msg: String) -> Result<()> {
-        let client = self.client.lock().await;
         let now = std::time::Instant::now();
-        let group = to.into_mls(&client);
+        let group = to.into_mls(&self.client);
         let msg = msg.into_bytes();
         group.send_message(msg.as_slice()).await?;
         let after = std::time::Instant::now();
@@ -126,22 +135,81 @@ impl AsyncXmtp {
 
     pub async fn create_group(&self) -> Result<Group> {
         let client = self.client.clone();
-        let client = client.lock().await;
-        let group = client.create_group()?;
-        Ok(group.into())
+        tokio::task::spawn_blocking(move || {
+            let group = client.create_group()?;
+            Ok(group.into())
+        })
+        .await?
     }
 
     pub async fn invite_user(&self, group: Group, user: String) -> Result<()> {
-        let client = self.client.clone();
-        let client = client.lock().await;
-        let group = group.into_mls(&client);
+        let group = group.into_mls(&self.client);
         group.add_members(vec![user]).await?;
         Ok(())
     }
 
     pub async fn installation_public_key(&self) -> Vec<u8> {
-        let client = self.client.lock().await;
-        client.installation_public_key()
+        self.client.installation_public_key()
+    }
+
+    pub async fn all_groups(&self) -> Result<Vec<Group>> {
+        self.client.sync_welcomes().await?;
+        let groups: Vec<Group> = self
+            .client
+            .find_groups(None, None, None, None)
+            .context("Could not find groups")?
+            .into_iter()
+            .map(Group::from)
+            .collect();
+        Ok(groups)
+    }
+}
+
+pub struct AsyncMessagesStream {
+    client: Arc<Client>,
+    groups: HashSet<Group>,
+    rx: Option<mpsc::UnboundedReceiver<StoredGroupMessage>>,
+    tx: mpsc::UnboundedSender<StoredGroupMessage>,
+    handles: Vec<tokio::task::JoinHandle<Result<()>>>,
+}
+
+impl AsyncMessagesStream {
+    pub fn new(client: Arc<Client>) -> Self {
+        let (tx, rx) = mpsc::unbounded_channel();
+        Self { client, groups: HashSet::new(), tx, rx: Some(rx), handles: Vec::new() }
+    }
+
+    /// Refresh with known groups
+    pub fn refresh(&mut self, groups: Vec<Group>) -> Result<()> {
+        for group in groups {
+            self.groups.insert(group.clone());
+            self.follow_conversation(group)?;
+        }
+        Ok(())
+    }
+
+    pub fn follow_conversation(&mut self, group: Group) -> Result<()> {
+        log::trace!("Following conversation {:?}", group);
+        if !self.groups.contains(&group) {
+            let (client, tx) = (self.client.clone(), self.tx.clone());
+            let handle = tokio::spawn(async move {
+                log::debug!("Spawning to follow converstation {:?}", group);
+                let stream = group.into_mls(&client);
+                let mut stream = stream.stream().await?;
+                while let Some(msg) = stream.next().await {
+                    tx.send(msg)?;
+                }
+                Ok::<_, Error>(())
+            });
+            self.handles.push(handle);
+        }
+        Ok(())
+    }
+
+    /// Can only call this once
+    pub fn stream(&mut self) -> Option<impl Stream<Item = StoredGroupMessage>> {
+        let rx = self.rx.take();
+        rx.map(|r| UnboundedReceiverStream::new(r))
     }
 }
 

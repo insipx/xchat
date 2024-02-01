@@ -46,9 +46,10 @@ impl Store for ChatArea {
                     log::debug!("Received {} groups with new messages", messages.len());
                     self.messages.add_group_messages(messages);
                 }
+                Action::ReceiveMessage(msg) => self.messages.add_group_message(msg),
                 Action::SetFocusedGroup(group) => self.messages.set_focus(&group.id),
                 Action::NewGroups(groups) => {
-                    log::debug!("Got new groups {:?}", groups);
+                    log::debug!("Got new groups in chat area {:?}", groups);
                     self.messages.add_groups(groups);
                 }
                 _ => (),

@@ -106,6 +106,7 @@ pub enum Action {
     EnterInsert,
     FakeMessage(GroupId, (String, String)),
     ReceiveMessages(HashMap<GroupId, Vec<StoredGroupMessage>>),
+    ReceiveMessage(StoredGroupMessage),
     SetFocusedGroup(Group),
     NewGroups(Vec<Group>),
     ChangeRoom(usize),

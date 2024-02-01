@@ -61,6 +61,15 @@ impl Messages {
         messages.push(message);
     }
 
+    pub fn add_group_message(&mut self, message: StoredGroupMessage) {
+        let group_id = message.group_id.clone();
+        if let Some(msgs) = self.inner.get_mut(&group_id) {
+            msgs.push(Message::from(message));
+        } else {
+            self.inner.insert(group_id, vec![Message::from(message)]);
+        }
+    }
+
     pub fn add_group_messages(&mut self, map: HashMap<GroupId, Vec<StoredGroupMessage>>) {
         // log::debug!("Adding Messages {:#?}", map);
         let extension = map.into_iter().map(|(id, msgs)| {

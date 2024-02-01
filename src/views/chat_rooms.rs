@@ -61,7 +61,7 @@ impl Store for ChatRooms {
             match action {
                 Action::KeyPress(key) => self.handle_key_event(key).await?,
                 Action::NewGroups(groups) => {
-                    log::debug!("Got new groups {:?}", groups);
+                    log::debug!("Got new groups in chat rooms {:?}", groups);
                     let groups = groups.into_iter();
                     self.groups.extend(groups.clone());
                     for group in groups {

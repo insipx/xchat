@@ -19,6 +19,11 @@ pub enum NewGroupsOrMessages {
     None,
 }
 
+pub enum NewGroupOrMessage {
+    Group(Group),
+    Message(StoredGroupMessage)
+}
+
 /// Stream of new Groups or Messages
 #[derive(Debug, Clone)]
 pub struct MessagesStream {

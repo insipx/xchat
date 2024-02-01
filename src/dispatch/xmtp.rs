@@ -1,5 +1,4 @@
 //! Events to process with libxmtp
-mod streams;
 pub mod xmtp_async;
 
 use anyhow::Result;
@@ -10,7 +9,6 @@ use tokio::{
 };
 use tokio_stream::{wrappers::ReceiverStream, StreamExt};
 
-use self::streams::NewGroupsOrMessages;
 use super::Action;
 use crate::{cli::XChatApp, dispatch::xmtp::xmtp_async::AsyncXmtp, types::Group};
 
@@ -33,29 +31,15 @@ impl From<XMTPAction> for Action {
     }
 }
 
-impl From<Option<NewGroupsOrMessages>> for Action {
-    fn from(new: Option<NewGroupsOrMessages>) -> Action {
-        match new {
-            Some(NewGroupsOrMessages::Groups(groups)) => Action::NewGroups(groups),
-            Some(NewGroupsOrMessages::Messages(msgs)) => {
-                Action::ReceiveMessages(msgs.into_iter().map(|(g, msgs)| (g.id, msgs)).collect())
-            }
-            Some(NewGroupsOrMessages::None) => Action::Noop,
-            None => Action::Noop,
-        }
-    }
-}
-
 pub struct XMTP {
     tx: Sender<Action>,
     rx: ReceiverStream<XMTPAction>,
-    xmtp: AsyncXmtp,
+    opts: XChatApp,
 }
 
 impl XMTP {
-    pub async fn new(tx: Sender<Action>, rx: Receiver<XMTPAction>, opts: XChatApp) -> Result<Self> {
-        let xmtp = AsyncXmtp::new_ephemeral(opts).await?;
-        Ok(Self { tx, rx: ReceiverStream::new(rx), xmtp })
+    pub fn new(tx: Sender<Action>, rx: Receiver<XMTPAction>, opts: XChatApp) -> Self {
+        Self { tx, rx: ReceiverStream::new(rx), opts }
     }
 
     pub fn spawn(self) -> JoinHandle<()> {
@@ -69,20 +53,26 @@ impl XMTP {
 
     async fn event_loop(self) -> Result<()> {
         log::info!("Spawning handle");
-        let XMTP { tx, mut rx, ref xmtp } = self;
+        let XMTP { tx, mut rx, opts } = self;
 
-        let messages_stream = self.xmtp.messages();
-        tokio::pin!(messages_stream);
+        let xmtp = AsyncXmtp::new_ephemeral(opts).await?;
+        let groups = xmtp.all_groups().await?;
+        let mut messages = xmtp.messages().await?;
+        messages.refresh(groups)?;
+        let mut conversations = xmtp.subscribe_conversations().await?;
+        let mut message_stream = messages.stream().expect("Only using once");
 
         let events = &mut rx;
         loop {
             tokio::select! {
-                msg_or_group = messages_stream.next() => {
-                    match msg_or_group.into() {
-                        a @ Action::NewGroups(_) | a @ Action::ReceiveMessages(_) => tx.send(a).map(|_| ()),
-                        _ => Ok(()),
-                    }?;
+                Some(msg) = message_stream.next() => {
+                    tx.send(Action::ReceiveMessage(msg))?;
                 },
+                Some(group) = conversations.next() => {
+                    messages.follow_conversation(group.clone())?;
+                    tx.send(Action::NewGroups(vec![group]))?;
+                },
+
                 event = events.next() => {
                     let res: Result<()> = match event {
                         Some(XMTPAction::SendMessage(group, m)) => {
@@ -94,7 +84,9 @@ impl XMTP {
                         },
                         Some(XMTPAction::CreateGroup) => {
                             log::debug!("Creating MLS group");
-                            let _ = xmtp.create_group().await?;
+                            let group = xmtp.create_group().await?;
+                            messages.follow_conversation(group.clone())?;
+                            tx.send(Action::NewGroups(vec![group]))?;
                             Ok(())
                         },
                         Some(XMTPAction::Invite(group, user)) => {

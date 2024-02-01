@@ -2,6 +2,7 @@
 name = "xchat"
 version = "0.1.0"
 edition = "2021"
+resolver = "2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -14,8 +15,8 @@ ratatui = "0.25.0"
 tui-textarea = "0.4"
 anyhow = "1"
 argh = "0.1.12"
-xmtp_mls = { path = "../../xmtp/libxmtp/xmtp_mls" }
-xmtp_api_grpc = { path = "../../xmtp/libxmtp/xmtp_api_grpc" }
+xmtp_mls = { git = "https://github.com/xmtp/libxmtp", branch = "main" }
+xmtp_api_grpc = { git = "https://github.com/xmtp/libxmtp", branch = "main" }
 ethers = "2"
 hex = "0.4"
 rand = "0.8"

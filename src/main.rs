@@ -40,7 +40,7 @@ async fn main() -> Result<()> {
     let (command_tx, command_rx) = mpsc::channel(100);
 
     // events
-    let xmtp = XMTP::new(tx.clone(), xmtp_rx, app).await?.spawn();
+    let xmtp = XMTP::new(tx.clone(), xmtp_rx, app).spawn();
     let events = Events::new(tx.clone()).spawn();
     let commands = Commands::new(tx.clone(), xmtp_tx.clone(), command_rx).spawn();
 
