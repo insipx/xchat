@@ -64,6 +64,7 @@ impl fmt::Debug for AsyncXmtp {
 }
 
 impl AsyncXmtp {
+    /// Generate a xmtp client from a random seed
     pub async fn new_ephemeral(opts: XChatApp) -> Result<Self> {
         let wallet = LocalWallet::new(&mut StdRng::from_entropy());
         let db_name = format!("{}-db.sqlite", hex::encode(wallet.address()));
@@ -167,7 +168,7 @@ impl AsyncXmtp {
 
 pub struct AsyncMessagesStream {
     client: Arc<Client>,
-    groups: HashSet<Group>,
+    groups: HashSet<Group>, // list of followed conversations
     rx: Option<mpsc::UnboundedReceiver<StoredGroupMessage>>,
     tx: mpsc::UnboundedSender<StoredGroupMessage>,
     handles: Vec<tokio::task::JoinHandle<Result<()>>>,
@@ -182,15 +183,17 @@ impl AsyncMessagesStream {
     /// Refresh with known groups
     pub fn refresh(&mut self, groups: Vec<Group>) -> Result<()> {
         for group in groups {
-            self.groups.insert(group.clone());
-            self.follow_conversation(group)?;
+            if self.groups.insert(group.clone()) {
+                self.follow_conversation(group)?;
+            }
         }
         Ok(())
     }
 
+    /// spawn a task that for each group to the messages of a stream from a group into one channel
     pub fn follow_conversation(&mut self, group: Group) -> Result<()> {
-        log::trace!("Following conversation {:?}", group);
-        if !self.groups.contains(&group) {
+        if self.groups.insert(group.clone()) {
+            log::debug!("Following conversation {:?}", group);
             let (client, tx) = (self.client.clone(), self.tx.clone());
             let handle = tokio::spawn(async move {
                 log::debug!("Spawning to follow converstation {:?}", group);

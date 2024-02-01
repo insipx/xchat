@@ -69,10 +69,10 @@ impl XMTP {
                     tx.send(Action::ReceiveMessage(msg))?;
                 },
                 Some(group) = conversations.next() => {
+                    log::debug!("Following conversation for group {:?}", group.id);
                     messages.follow_conversation(group.clone())?;
                     tx.send(Action::NewGroups(vec![group]))?;
                 },
-
                 event = events.next() => {
                     let res: Result<()> = match event {
                         Some(XMTPAction::SendMessage(group, m)) => {
@@ -100,7 +100,7 @@ impl XMTP {
                         None => Ok(())
                     };
                     if let Err(e) = res {
-                        log::error!("Action failed to send {}", e);
+                        log::debug!("Action failed to send {}", e);
                     }
                 }
             };

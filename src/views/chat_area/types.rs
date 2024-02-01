@@ -49,7 +49,17 @@ impl Messages {
 
     pub fn get(&self) -> (Vec<String>, Vec<String>) {
         let messages = &self.inner.get(&self.focused).expect("Focused group id must always exist");
-        messages.iter().cloned().map(|Message { user, text, .. }| (user, text)).unzip()
+        messages
+            .iter()
+            .cloned()
+            .filter_map(|Message { user, text, kind, .. }| {
+                if kind == GroupMessageKind::Application {
+                    Some((user, text))
+                } else {
+                    None
+                }
+            })
+            .unzip()
     }
 
     pub fn add(&mut self, id: &GroupId, mut message: Message) {

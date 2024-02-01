@@ -62,7 +62,8 @@ impl Store for ChatRooms {
                 Action::KeyPress(key) => self.handle_key_event(key).await?,
                 Action::NewGroups(groups) => {
                     log::debug!("Got new groups in chat rooms {:?}", groups);
-                    let groups = groups.into_iter();
+                    let groups =
+                        groups.into_iter().filter(|g| !self.groups.contains(g)).collect::<Vec<_>>();
                     self.groups.extend(groups.clone());
                     for group in groups {
                         self.rooms.push(format!("{}", &GroupIdWrapper::from(group.id)));

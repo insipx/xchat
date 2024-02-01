@@ -97,6 +97,10 @@ impl CommandAction {
         };
         Ok(cmd)
     }
+
+    fn noop() -> String {
+        "this command currently does nothing, but will in the future".into()
+    }
 }
 
 impl Commands {
@@ -122,14 +126,14 @@ impl Commands {
             match event {
                 CommandAction::Help => self.send_message(CommandAction::help()).map(|_| ())?,
                 CommandAction::Quit => self.tx.send(Action::Quit).map(|_| ())?,
-                CommandAction::Register => (),
-                CommandAction::Generate => (),
-                CommandAction::List(_) => (),
+                CommandAction::Register => self.send_message(CommandAction::noop()).map(|_| ())?,
+                CommandAction::Generate => self.send_message(CommandAction::noop()).map(|_| ())?,
+                CommandAction::List(_) => self.send_message(CommandAction::noop()).map(|_| ())?,
                 CommandAction::Create => {
                     log::debug!("Sent CreateGroup XMTP Action");
                     self.xmtp.send(XMTPAction::CreateGroup).await?;
                 }
-                CommandAction::Join => (),
+                CommandAction::Join => self.send_message(CommandAction::noop()).map(|_| ())?,
                 CommandAction::Invite(group, user) => {
                     log::debug!("Inviting to group");
                     self.xmtp.send(XMTPAction::Invite(group, user)).await?;
