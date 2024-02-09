@@ -43,7 +43,7 @@ impl<'a> InputBox<'a> {
             log::debug!("Got a command {}", &command);
             let cmd = command.strip_prefix("/").expect("Checked if start with `/`");
             let cmd = CommandAction::from_string(cmd.into(), &self.focused_group)?;
-            self.command.send(cmd).await.expect("Handle bad send");
+            self.command.send(cmd).await?;
             self.text.clear();
         } else {
             if self.text_area.is_empty() {

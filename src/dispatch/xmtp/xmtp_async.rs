@@ -9,16 +9,16 @@ use tokio::{sync::mpsc, task::JoinError};
 use tokio_stream::{wrappers::UnboundedReceiverStream, Stream, StreamExt};
 use xmtp_api_grpc::grpc_api_helper::Client as ApiClient;
 use xmtp_mls::{
-    builder::IdentityStrategy,
+    builder::{IdentityStrategy, LegacyIdentity},
     groups::MlsGroup,
     storage::{group_message::StoredGroupMessage, EncryptedMessageStore, StorageOption},
-    Network,
+    InboxOwner, Network,
 };
 
 use crate::{cli::XChatApp, types::Group};
 
 pub type Client = xmtp_mls::client::Client<ApiClient>;
-type ClientBuilder = xmtp_mls::builder::ClientBuilder<ApiClient, LocalWallet>;
+type ClientBuilder = xmtp_mls::builder::ClientBuilder<ApiClient>;
 
 impl Group {
     pub fn into_mls<'a>(self, client: &'a Client) -> MlsGroup<'a, ApiClient> {
@@ -76,34 +76,40 @@ impl AsyncXmtp {
         let client = Self::create_client(
             &opts,
             db.clone(),
-            IdentityStrategy::CreateIfNotFound(wallet.clone()),
+            IdentityStrategy::CreateIfNotFound(
+                format!("0x{}", hex::encode(wallet.address())),
+                LegacyIdentity::None,
+            ),
         )
         .await?;
 
-        client.register_identity().await.context("Initialization Failed")?;
-
+        let signature: Option<Vec<u8>> =
+            client.text_to_sign().map(|t| wallet.sign(&t)).transpose()?.map(Into::into);
+        let res = client.register_identity(signature).await.context("Initialization Failed");
+        log::debug!("--------------------------- res: {:?}", res);
+        res?;
         Ok(Self { wallet, db, client: Arc::new(client) })
     }
 
     async fn create_client(
         opts: &XChatApp,
         db: PathBuf,
-        account: IdentityStrategy<LocalWallet>,
+        account: IdentityStrategy,
     ) -> Result<Client> {
         let msg_store = Self::get_encrypted_store(db)?;
         let mut builder = ClientBuilder::new(account).store(msg_store);
 
         if opts.local {
-            builder = builder.network(Network::Local("http://localhost:5556")).api_client(
-                ApiClient::create("http://localhost:5556".into(), false).await.unwrap(),
-            );
+            builder = builder
+                .network(Network::Local("http://localhost:5556"))
+                .api_client(ApiClient::create("http://localhost:5556".into(), false).await?);
         } else {
-            builder = builder.network(Network::Dev).api_client(
-                ApiClient::create("https://dev.xmtp.network:5556".into(), true).await.unwrap(),
-            );
+            builder = builder
+                .network(Network::Dev)
+                .api_client(ApiClient::create("https://dev.xmtp.network:5556".into(), true).await?);
         }
 
-        Ok(builder.build()?)
+        Ok(builder.build().await?)
     }
 
     fn get_encrypted_store(db: PathBuf) -> Result<EncryptedMessageStore> {
@@ -136,11 +142,8 @@ impl AsyncXmtp {
 
     pub async fn create_group(&self) -> Result<Group> {
         let client = self.client.clone();
-        tokio::task::spawn_blocking(move || {
-            let group = client.create_group()?;
-            Ok(group.into())
-        })
-        .await?
+        let group = client.create_group()?;
+        Ok(group.into())
     }
 
     pub async fn invite_user(&self, group: Group, user: String) -> Result<()> {
