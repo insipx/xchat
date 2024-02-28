@@ -142,7 +142,7 @@ impl AsyncXmtp {
 
     pub async fn create_group(&self) -> Result<Group> {
         let client = self.client.clone();
-        let group = client.create_group()?;
+        let group = client.create_group(None)?;
         Ok(group.into())
     }
 
