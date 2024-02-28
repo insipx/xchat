@@ -13,7 +13,7 @@ pub use commands::*;
 use crossterm::event::KeyEvent;
 use futures::future::join_all;
 use ratatui::{prelude::Rect, Frame};
-use tokio::sync::broadcast::Receiver;
+use tokio::sync::broadcast::{self, Receiver};
 pub use xmtp::*;
 use xmtp_mls::storage::group_message::StoredGroupMessage;
 
@@ -32,12 +32,11 @@ impl<'a> Dispatcher<'a> {
 
     /// Asyncronously broadcasts an action to all `Stores`. Logs any errors resulting from them.
     pub async fn dispatch(&mut self) -> Action {
-        let action = self.events.recv().await.unwrap();
+        let action = self.get_action().await;
 
-        match action {
-            Action::Quit => return Action::Quit,
-            _ => (),
-        };
+        if let Action::Quit = action {
+            return Action::Quit;
+        }
 
         let mut dispatches = vec![];
 
@@ -53,6 +52,24 @@ impl<'a> Dispatcher<'a> {
             }
         }
         Action::Noop
+    }
+
+    async fn get_action(&mut self) -> Action {
+        use broadcast::error::RecvError::*;
+        let mut action: Option<Action> = Option::None;
+
+        while action.is_none() {
+            action = match self.events.recv().await {
+                Ok(Action::Quit) => Some(Action::Quit),
+                Err(Closed) => Some(Action::Quit),
+                Err(Lagged(msgs)) => {
+                    log::warn!("Dispatcher lagged {msgs}");
+                    None
+                }
+                Ok(action) => Some(action),
+            };
+        }
+        action.expect("Action must be some to exit infinite loop")
     }
 }
 

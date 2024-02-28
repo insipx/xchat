@@ -5,7 +5,7 @@ use std::{collections::HashSet, fmt, path::PathBuf, sync::Arc};
 use anyhow::{anyhow, Context as _, Error, Result};
 use ethers::signers::{LocalWallet, Signer};
 use rand::{rngs::StdRng, SeedableRng};
-use tokio::{sync::mpsc, task::JoinError};
+use tokio::sync::mpsc;
 use tokio_stream::{wrappers::UnboundedReceiverStream, Stream, StreamExt};
 use xmtp_api_grpc::grpc_api_helper::Client as ApiClient;
 use xmtp_mls::{
@@ -230,17 +230,6 @@ impl Drop for AsyncXmtp {
                 ErrorKind::NotFound => (),
                 _ => log::error!("DB File could not be removed {}", e),
             }
-        }
-    }
-}
-
-#[allow(dead_code)]
-fn unwrap_join<T>(res: Result<T, JoinError>) -> T {
-    match res {
-        Ok(v) => v,
-        Err(e) => {
-            log::error!("XMTP Task failed {}", e);
-            panic!("oh no");
         }
     }
 }

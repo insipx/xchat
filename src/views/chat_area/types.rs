@@ -116,8 +116,12 @@ impl From<StoredGroupMessage> for Message {
         let user = group_message.sender_account_address;
         let user = format!(
             "{}...{} ",
-            user.get(0..4).unwrap(),
-            user.get(user.len() - 4..user.len()).unwrap()
+            user.get(0..4)
+                .expect("Sender account address MUST be at least 20 characters; qed")
+                .to_string(),
+            user.get((user.len() - 4)..(user.len()))
+                .expect("Sender account address MUST be at least 20 characters; qed")
+                .to_string()
         );
         Message {
             user,
