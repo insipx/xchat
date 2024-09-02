@@ -56,21 +56,17 @@ impl XMTP {
         let XMTP { tx, mut rx, opts } = self;
 
         let xmtp = AsyncXmtp::new_ephemeral(opts).await?;
-        let groups = xmtp.all_groups().await?;
         let mut messages = xmtp.messages().await?;
-        messages.refresh(groups)?;
         let mut conversations = xmtp.subscribe_conversations().await?;
-        let mut message_stream = messages.stream().expect("Only using once");
 
         let events = &mut rx;
         loop {
             tokio::select! {
-                Some(msg) = message_stream.next() => {
-                    tx.send(Action::ReceiveMessage(msg))?;
+                Some(msg) = messages.next() => {
+                    tx.send(Action::ReceiveMessage(msg?))?;
                 },
                 Some(group) = conversations.next() => {
                     log::debug!("Following conversation for group {:?}", group.id);
-                    messages.follow_conversation(group.clone())?;
                     tx.send(Action::NewGroups(vec![group]))?;
                 },
                 event = events.next() => {
@@ -85,7 +81,6 @@ impl XMTP {
                         Some(XMTPAction::CreateGroup) => {
                             log::debug!("Creating MLS group");
                             let group = xmtp.create_group().await?;
-                            messages.follow_conversation(group.clone())?;
                             tx.send(Action::NewGroups(vec![group]))?;
                             Ok(())
                         },

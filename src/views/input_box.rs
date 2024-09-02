@@ -109,7 +109,6 @@ impl<'a> Store for InputBox<'a> {
 
 impl<'a> ViewRender for InputBox<'a> {
     fn render(&self, frame: &mut Frame, render_ctx: RenderContext) {
-        let widget = self.text_area.widget();
-        frame.render_widget(widget, render_ctx.area);
+        frame.render_widget(&self.text_area, render_ctx.area);
     }
 }

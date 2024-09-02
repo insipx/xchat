@@ -66,7 +66,7 @@ impl PageRender for ChatPage<'_> {
         let screen = Layout::default()
             .direction(Direction::Horizontal)
             .constraints(vec![Constraint::Percentage(10), Constraint::Percentage(90)])
-            .split(frame.size());
+            .split(frame.area());
 
         let height = std::cmp::max(self.input_box.lines().len(), MIN_CHAT_HEIGHT) as u16 + 2;
 
