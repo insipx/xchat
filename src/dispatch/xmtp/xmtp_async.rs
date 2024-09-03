@@ -7,7 +7,7 @@ use ethers::signers::{LocalWallet, Signer};
 use rand::{rngs::StdRng, SeedableRng};
 use tokio_stream::{Stream, StreamExt};
 use xmtp_api_grpc::grpc_api_helper::Client as ApiClient;
-use xmtp_id::associations::generate_inbox_id;
+use xmtp_id::associations::{generate_inbox_id, RecoverableEcdsaSignature};
 use xmtp_mls::{
     identity::IdentityStrategy,
     groups::MlsGroup,
@@ -87,9 +87,19 @@ impl AsyncXmtp {
         .await?;
 
         let identity = client.identity();
-        let res = client.register_identity(identity.signature_request().expect("cant be none")).await.context("Initialization Failed");
+        let mut signature_request = identity.signature_request().expect("cant be none");
+        let signature = RecoverableEcdsaSignature::new(
+            signature_request.signature_text(),
+            wallet.sign(signature_request.signature_text().as_str())
+                .unwrap()
+                .into(),
+        );
+        signature_request
+            .add_signature(Box::new(signature))
+            .await
+            .unwrap();
+            let res = client.register_identity(signature_request).await?;
         log::debug!("--------------------------- res: {:?}", res);
-        res?;
         Ok(Self { wallet, db, client: Arc::new(client) })
     }
 
