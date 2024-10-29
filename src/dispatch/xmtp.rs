@@ -56,8 +56,10 @@ impl XMTP {
         let XMTP { tx, mut rx, opts } = self;
 
         let xmtp = AsyncXmtp::new_ephemeral(opts).await?;
-        let mut messages = xmtp.messages().await?;
-        let mut conversations = xmtp.subscribe_conversations().await?;
+        let messages = xmtp.messages().await?;
+        futures::pin_mut!(messages);
+        let conversations = xmtp.subscribe_conversations().await?;
+        futures::pin_mut!(conversations);
 
         let events = &mut rx;
         loop {
@@ -66,6 +68,7 @@ impl XMTP {
                     tx.send(Action::ReceiveMessage(msg?))?;
                 },
                 Some(group) = conversations.next() => {
+                    let group = group.unwrap();
                     log::debug!("Following conversation for group {:?}", group.id);
                     tx.send(Action::NewGroups(vec![group]))?;
                 },

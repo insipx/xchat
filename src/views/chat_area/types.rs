@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 
 use xmtp_mls::storage::group_message::{GroupMessageKind, StoredGroupMessage};
+use xmtp_proto::xmtp::message_contents::EncodedContent;
+use prost::Message as _;
 
 use crate::types::Group;
 
@@ -112,7 +114,9 @@ impl Messages {
 
 impl From<StoredGroupMessage> for Message {
     fn from(group_message: StoredGroupMessage) -> Message {
-        let text = String::from_utf8_lossy(&group_message.decrypted_message_bytes);
+        let content = EncodedContent::decode(group_message.decrypted_message_bytes.as_slice());
+        let msg = content.unwrap();
+        let text = String::from_utf8_lossy(msg.content.as_slice());
         let user = group_message.sender_inbox_id;
         let user = format!(
             "{}...{} ",

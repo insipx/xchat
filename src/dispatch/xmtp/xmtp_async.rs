@@ -1,40 +1,42 @@
 //! Async Interface to libXMTP
 
-use std::{fmt, path::PathBuf, sync::Arc};
+use std::{fmt, path::PathBuf, sync::Arc, collections::HashMap};
 
 use anyhow::{anyhow, Context as _, Result};
 use ethers::signers::{LocalWallet, Signer};
 use rand::{rngs::StdRng, SeedableRng};
 use tokio_stream::{Stream, StreamExt};
 use xmtp_api_grpc::grpc_api_helper::Client as ApiClient;
-use xmtp_id::associations::{generate_inbox_id, RecoverableEcdsaSignature};
+use xmtp_id::associations::{generate_inbox_id, unverified::UnverifiedSignature};
 use xmtp_mls::{
     identity::IdentityStrategy,
     groups::MlsGroup,
     storage::{group_message::StoredGroupMessage, EncryptedMessageStore, StorageOption},
     InboxOwner,
-    client::ClientError
+    subscriptions::SubscribeError,
 };
+use xmtp_proto::xmtp::message_contents::{EncodedContent, ContentTypeId};
 use xmtp_mls::groups::GroupMetadataOptions;
+use prost::Message;
 use crate::{cli::XChatApp, types::Group};
 
 pub type Client = xmtp_mls::client::Client<ApiClient>;
 type ClientBuilder = xmtp_mls::builder::ClientBuilder<ApiClient>;
 
 impl Group {
-    pub fn into_mls(self, client: &Client) -> MlsGroup {
-        MlsGroup::new(client.context().clone(), self.id, self.created_at)
+    pub fn into_mls(self, client: &Client) -> MlsGroup<Client> {
+        client.group(self.id).unwrap()
     }
 }
 
-impl From<MlsGroup> for Group {
-    fn from(group: MlsGroup) -> Group {
+impl<C> From<MlsGroup<C>> for Group {
+    fn from(group: MlsGroup<C>) -> Group {
         Group::new(group.group_id, group.created_at_ns, 0)
     }
 }
 
-impl From<&MlsGroup> for Group {
-    fn from(group: &MlsGroup) -> Group {
+impl<C> From<&MlsGroup<C>> for Group {
+    fn from(group: &MlsGroup<C>) -> Group {
         Group::new(group.group_id.clone(), group.created_at_ns, 0)
     }
 }
@@ -59,7 +61,7 @@ impl fmt::Debug for AsyncXmtp {
         f.debug_struct("AsyncXmtp")
             .field("wallet", &self.wallet)
             .field("db", &self.db)
-            .field("client", &self.client)
+            .field("client", &"client")
             .finish()
     }
 }
@@ -88,14 +90,12 @@ impl AsyncXmtp {
 
         let identity = client.identity();
         let mut signature_request = identity.signature_request().expect("cant be none");
-        let signature = RecoverableEcdsaSignature::new(
-            signature_request.signature_text(),
-            wallet.sign(signature_request.signature_text().as_str())
+        let sig_bytes = wallet.sign(signature_request.signature_text().as_str())
                 .unwrap()
-                .into(),
-        );
+                .into();
+        let signature = UnverifiedSignature::new_recoverable_ecdsa(sig_bytes);
         signature_request
-            .add_signature(Box::new(signature))
+            .add_signature(signature, client.scw_verifier())
             .await
             .unwrap();
             let res = client.register_identity(signature_request).await?;
@@ -108,7 +108,7 @@ impl AsyncXmtp {
         db: PathBuf,
         account: IdentityStrategy,
     ) -> Result<Client> {
-        let msg_store = Self::get_encrypted_store(db)?;
+        let msg_store = Self::get_encrypted_store(db).await?;
         let mut builder = ClientBuilder::new(account).store(msg_store);
 
         if opts.local {
@@ -122,20 +122,21 @@ impl AsyncXmtp {
         Ok(builder.build().await?)
     }
 
-    fn get_encrypted_store(db: PathBuf) -> Result<EncryptedMessageStore> {
+    async fn get_encrypted_store(db: PathBuf) -> Result<EncryptedMessageStore> {
         let s = db.to_string_lossy().to_string();
         let store = EncryptedMessageStore::new_unencrypted(StorageOption::Persistent(s))
+            .await
             .context("Persistent message store could not be opened.")?;
         Ok(store)
     }
 
-    pub async fn subscribe_conversations(&self) -> Result<impl Stream<Item = Group> + '_> {
-        let stream = self.client.stream_conversations().await?.map(Group::from);
+    pub async fn subscribe_conversations(&self) -> Result<impl Stream<Item = Result<Group>> + '_> {
+        let stream = self.client.stream_conversations(None).await?.map(|res| res.map(Group::from).map_err(anyhow::Error::from));
         Ok(stream)
     }
 
-    pub async fn messages(&self) -> Result<impl Stream<Item = Result<StoredGroupMessage, ClientError>>> {
-        Ok(Client::stream_all_messages(self.client.clone()).await?)
+    pub async fn messages(&self) -> Result<impl Stream<Item = Result<StoredGroupMessage, SubscribeError>> + use<'_>> {
+        Ok(Client::stream_all_messages(&self.client, None).await?)
     }
 
     // #[tracing::instrument(name = "send_message", skip(self, to))]
@@ -143,7 +144,20 @@ impl AsyncXmtp {
         let now = std::time::Instant::now();
         let group = to.into_mls(&self.client);
         let msg = msg.into_bytes();
-        group.send_message(msg.as_slice(), &self.client).await?;
+        let id = ContentTypeId {
+            authority_id: "xmtp.org".into(),
+            type_id: "text".into(),
+            version_major: 1,
+            version_minor: 0,
+        };
+        let msg = EncodedContent {
+            r#type: Some(id),
+            parameters: vec![("encoding".to_string(), "UTF-8".to_string())].into_iter().collect::<HashMap<_, _>>(),
+            fallback: None,
+            compression: None,
+            content: msg
+        };
+        group.send_message(&msg.encode_to_vec()).await?;
         let after = std::time::Instant::now();
         log::debug!("Took {:?} to send message", after - now);
         Ok(())
@@ -157,7 +171,7 @@ impl AsyncXmtp {
 
     pub async fn invite_user(&self, group: Group, user: String) -> Result<()> {
         let group = group.into_mls(&self.client);
-        group.add_members(&self.client, vec![user]).await?;
+        group.add_members(vec![user]).await?;
         Ok(())
     }
 

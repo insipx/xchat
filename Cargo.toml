@@ -18,6 +18,8 @@ argh = "0.1.12"
 xmtp_mls = { git = "https://github.com/xmtp/libxmtp", branch = "main" }
 xmtp_id = { git = "https://github.com/xmtp/libxmtp", branch = "main" }
 xmtp_api_grpc = { git = "https://github.com/xmtp/libxmtp", branch = "main" }
+xmtp_proto = { git = "https://github.com/xmtp/libxmtp", branch = "main" }
+prost = "0.13"
 ethers = "2"
 hex = "0.4"
 rand = "0.8"
