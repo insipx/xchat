@@ -11,8 +11,8 @@ log = "0.4"
 futures = "0.3"
 chrono = "0.4"
 crossterm = { version = "0.28.0", features = ["event-stream"]}
-ratatui = "0.28.1"
-tui-textarea = "0.6"
+ratatui = "0.29.0"
+tui-textarea = "0.7"
 anyhow = "1"
 argh = "0.1.12"
 xmtp_mls = { git = "https://github.com/xmtp/libxmtp", branch = "main" }
