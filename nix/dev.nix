@@ -1,5 +1,6 @@
 { system
 , fenix
+, rust-analyzer
 , mkShell
 , darwin
 , mktemp
@@ -14,7 +15,8 @@
 }:
 let
   inherit (darwin.apple_sdk) frameworks;
-  rust-toolchain = with fenix.pkgs."${system}";
+  fenixPkgs = fenix.packages."${system}";
+  rust-toolchain = with fenixPkgs;
     combine [
       minimal.rustc
       minimal.cargo
@@ -25,8 +27,7 @@ in
 mkShell {
   nativeBuildInputs = [ pkg-config ];
   buildInputs = [
-    # (fenixPkgs.fromToolchainFile { file = ./rust-toolchain.toml; })
-    fenix.pkgs."${system}".rust-analyzer
+    rust-analyzer
     rust-toolchain
     mktemp
     shellcheck

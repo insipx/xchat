@@ -14,6 +14,7 @@ use xmtp_mls::{
     storage::{group_message::StoredGroupMessage, EncryptedMessageStore, StorageOption},
     InboxOwner,
     subscriptions::SubscribeError,
+    types::InstallationId
 };
 use xmtp_proto::xmtp::message_contents::{EncodedContent, ContentTypeId};
 use xmtp_mls::groups::GroupMetadataOptions;
@@ -78,8 +79,8 @@ impl AsyncXmtp {
         db.push(db_name);
 
         let nonce = 0;
-        let inbox_id = generate_inbox_id(&wallet.get_address(), &nonce);
-        let strategy = IdentityStrategy::CreateIfNotFound(inbox_id, wallet.get_address(), nonce, None);
+        let inbox_id = generate_inbox_id(&wallet.get_address(), &nonce)?;
+        let strategy = IdentityStrategy::new(inbox_id, wallet.get_address(), nonce, None);
 
         let client = Self::create_client(
             &opts,
@@ -113,10 +114,10 @@ impl AsyncXmtp {
 
         if opts.local {
             builder = builder
-                .api_client(ApiClient::create("http://localhost:5556".into(), false).await?);
+                .api_client(ApiClient::create("http://localhost:5556", false).await?);
         } else {
             builder = builder
-                .api_client(ApiClient::create("https://dev.xmtp.network:5556".into(), true).await?);
+                .api_client(ApiClient::create("https://dev.xmtp.network:5556", true).await?);
         }
 
         Ok(builder.build().await?)
@@ -171,11 +172,11 @@ impl AsyncXmtp {
 
     pub async fn invite_user(&self, group: Group, user: String) -> Result<()> {
         let group = group.into_mls(&self.client);
-        group.add_members(vec![user]).await?;
+        group.add_members(&[user]).await?;
         Ok(())
     }
 
-    pub async fn installation_public_key(&self) -> Vec<u8> {
+    pub async fn installation_public_key(&self) -> InstallationId {
         self.client.installation_public_key()
     }
 }

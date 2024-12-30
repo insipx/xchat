@@ -7,10 +7,13 @@
     };
     flake-utils.url = "github:numtide/flake-utils";
   };
-  outputs = { nixpkgs, flake-utils, fenix }:
+  outputs = { nixpkgs, flake-utils, fenix, ... }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ fenix.overlays.default ];
+        };
       in
       {
         devShells.default = pkgs.callPackage ./nix/dev.nix { inherit system fenix; };
